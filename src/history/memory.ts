@@ -23,7 +23,9 @@ export function createMemoryHistory(options?: MemoryHistoryOptions): RouterHisto
   const listeners = new Set<(url: string) => void>();
 
   const notify = (url: string): void => {
-    for (const listener of listeners) listener(url);
+    for (const listener of listeners) {
+      listener(url);
+    }
   };
 
   return {
@@ -41,7 +43,7 @@ export function createMemoryHistory(options?: MemoryHistoryOptions): RouterHisto
       const next = Math.max(0, Math.min(state.entries.length - 1, state.index + delta));
       if (next !== state.index) {
         state.index = next;
-        notify(state.entries[next]);
+        notify(state.entries[next]!);
       }
     },
     listen(listener) {

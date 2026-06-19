@@ -6,10 +6,24 @@ export default tseslint.config(
   {
     languageOptions: {
       parserOptions: {
-        project: "./tsconfig.eslint.json",
+        projectService: {
+          // Files excluded from tsconfig.json (tests, root *.ts config files) use
+          // tsconfig.eslint.json as fallback so type-checked rules still apply.
+          allowDefaultProject: ["*.ts", "tests/*/*.ts"],
+          defaultProject: "./tsconfig.eslint.json",
+        },
         tsconfigRootDir: import.meta.dirname,
       },
     },
+  },
+  {
+    rules: {
+      "@typescript-eslint/no-non-null-assertion": "off",
+    },
+  },
+  {
+    files: ["**/*.js"],
+    extends: [tseslint.configs.disableTypeChecked],
   },
   {
     ignores: ["dist/**", "node_modules/**", "coverage/**"],
