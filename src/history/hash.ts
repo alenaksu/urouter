@@ -21,6 +21,9 @@ export function createHashHistory(): RouterHistory {
   });
 
   return {
+    get current() {
+      return getUrl();
+    },
     push(url) {
       window.history.pushState(null, "", "#" + url);
       emitter.emit(url);

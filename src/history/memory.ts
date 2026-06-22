@@ -24,6 +24,9 @@ export function createMemoryHistory(options?: MemoryHistoryOptions): RouterHisto
   const emitter = createEmitter<string>();
 
   return {
+    get current() {
+      return state.entries[state.index] ?? "/";
+    },
     push(url) {
       state.entries.splice(state.index + 1);
       state.entries.push(url);

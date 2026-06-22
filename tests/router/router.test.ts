@@ -1,0 +1,690 @@
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { createRouter } from "../../src/router.js";
+import { createMemoryHistory } from "../../src/history/memory.js";
+import { NavigationAbortedError } from "../../src/types.js";
+import type { RouteDefinition, ResolvedRoute, NavigationContext } from "../../src/types.js";
+
+// ---------------------------------------------------------------------------
+// Fixtures
+// ---------------------------------------------------------------------------
+
+const routes: RouteDefinition[] = [
+  { path: "/", name: "home" },
+  { path: "/about", name: "about" },
+  { path: "/users/:id", name: "user" },
+  {
+    path: "/admin",
+    name: "admin",
+    children: [{ path: "settings", name: "admin-settings" }],
+  },
+];
+
+// Track every router created in this file. Click tests flush these before each
+// run to remove stale document click handlers left by previous tests.
+const allRouters: { destroy(): void }[] = [];
+
+function makeRouter(overrides?: Partial<Parameters<typeof createRouter>[0]>) {
+  const r = createRouter({
+    routes,
+    history: createMemoryHistory(),
+    ...overrides,
+  });
+  allRouters.push(r);
+  return r;
+}
+
+// ---------------------------------------------------------------------------
+// createRouter
+// ---------------------------------------------------------------------------
+
+describe("createRouter", () => {
+  it("currentRoute is null before the initial navigation commits", async () => {
+    // Use an async guard so the pipeline yields before committing
+    let capturedDuringNav: ResolvedRoute | null = undefined!;
+    const router = createRouter({
+      routes,
+      history: createMemoryHistory(),
+      plugins: [
+        (r) => {
+          r.onBeforeNavigate(async () => {
+            await Promise.resolve();
+            capturedDuringNav = r.currentRoute;
+          });
+        },
+      ],
+    });
+    allRouters.push(router);
+    await router.ready;
+    expect(capturedDuringNav).toBeNull();
+    expect(router.currentRoute).not.toBeNull();
+  });
+
+  it("ready resolves to the initial route", async () => {
+    const router = makeRouter();
+    const route = await router.ready;
+    expect(route.pathname).toBe("/");
+    expect(route.name).toBe("home");
+  });
+
+  it("ready resolves using the history backend's initial URL", async () => {
+    const router = makeRouter({ history: createMemoryHistory({ initialUrl: "/about" }) });
+    const route = await router.ready;
+    expect(route.pathname).toBe("/about");
+    expect(route.name).toBe("about");
+  });
+
+  it("currentRoute is set after ready", async () => {
+    const router = makeRouter();
+    await router.ready;
+    expect(router.currentRoute?.pathname).toBe("/");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// navigate(string)
+// ---------------------------------------------------------------------------
+
+describe("navigate(string)", () => {
+  it("resolves with the matched ResolvedRoute", async () => {
+    const router = makeRouter();
+    await router.ready;
+    const route = await router.navigate("/about");
+    expect(route.pathname).toBe("/about");
+    expect(route.name).toBe("about");
+  });
+
+  it("updates currentRoute after navigation", async () => {
+    const router = makeRouter();
+    await router.ready;
+    await router.navigate("/about");
+    expect(router.currentRoute?.pathname).toBe("/about");
+  });
+
+  it("extracts path params", async () => {
+    const router = makeRouter();
+    await router.ready;
+    const route = await router.navigate("/users/42");
+    expect(route.params).toEqual({ id: "42" });
+    expect(route.name).toBe("user");
+  });
+
+  it("preserves query string", async () => {
+    const router = makeRouter();
+    await router.ready;
+    const route = await router.navigate("/about?tab=info");
+    expect(route.query).toEqual({ tab: "info" });
+  });
+
+  it("preserves hash", async () => {
+    const router = makeRouter();
+    await router.ready;
+    const route = await router.navigate("/about#section");
+    expect(route.hash).toBe("#section");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// navigate({ name })
+// ---------------------------------------------------------------------------
+
+describe("navigate({ name })", () => {
+  it("navigates to a named route", async () => {
+    const router = makeRouter();
+    await router.ready;
+    const route = await router.navigate({ name: "about" });
+    expect(route.pathname).toBe("/about");
+  });
+
+  it("interpolates params for a named route", async () => {
+    const router = makeRouter();
+    await router.ready;
+    const route = await router.navigate({ name: "user", params: { id: "99" } });
+    expect(route.pathname).toBe("/users/99");
+    expect(route.params).toEqual({ id: "99" });
+  });
+
+  it("rejects with not-found for an unknown name", async () => {
+    const router = makeRouter();
+    await router.ready;
+    await expect(router.navigate({ name: "ghost" })).rejects.toMatchObject({
+      reason: "not-found",
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// navigate({ path, params })
+// ---------------------------------------------------------------------------
+
+describe("navigate({ path, params })", () => {
+  it("interpolates params into a path template", async () => {
+    const router = makeRouter();
+    await router.ready;
+    const route = await router.navigate({ path: "/users/:id", params: { id: "7" } });
+    expect(route.pathname).toBe("/users/7");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// replace
+// ---------------------------------------------------------------------------
+
+describe("replace", () => {
+  it("updates currentRoute like navigate", async () => {
+    const router = makeRouter();
+    await router.ready;
+    const route = await router.replace("/about");
+    expect(route.pathname).toBe("/about");
+  });
+
+  it("does not grow the history stack", async () => {
+    const history = createMemoryHistory();
+    const router = createRouter({ routes, history });
+    allRouters.push(router);
+    await router.ready;
+    await router.replace("/about");
+    await router.replace("/users/1");
+    // If replace doesn't grow the stack, the history still has 1 entry,
+    // and go(-1) is a no-op (already at index 0).
+    const listener = vi.fn();
+    const stop = history.listen(listener);
+    history.go(-1);
+    stop();
+    expect(listener).not.toHaveBeenCalled();
+    expect(history.current).toBe("/users/1");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// resolve
+// ---------------------------------------------------------------------------
+
+describe("resolve", () => {
+  it("returns a URL string for a known string path", async () => {
+    const router = makeRouter();
+    await router.ready;
+    expect(router.resolve("/about")).toBe("/about");
+  });
+
+  it("returns a URL for a named route with params", async () => {
+    const router = makeRouter();
+    await router.ready;
+    expect(router.resolve({ name: "user", params: { id: "5" } })).toBe("/users/5");
+  });
+
+  it("returns null for an unknown path", async () => {
+    const router = makeRouter();
+    await router.ready;
+    expect(router.resolve("/does-not-exist")).toBeNull();
+  });
+
+  it("returns null for an unknown named route", async () => {
+    const router = makeRouter();
+    await router.ready;
+    expect(router.resolve({ name: "ghost" })).toBeNull();
+  });
+
+  it("preserves query and hash", async () => {
+    const router = makeRouter();
+    await router.ready;
+    expect(router.resolve("/about?tab=x#s")).toBe("/about?tab=x#s");
+  });
+
+  it("respects base", async () => {
+    const router = makeRouter({
+      history: createMemoryHistory({ initialUrl: "/app/" }),
+      base: "/app",
+    });
+    await router.ready;
+    expect(router.resolve("/about")).toBe("/app/about");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Not found
+// ---------------------------------------------------------------------------
+
+describe("not-found", () => {
+  it("rejects with NavigationAbortedError reason not-found", async () => {
+    const router = makeRouter();
+    await router.ready;
+    await expect(router.navigate("/no-such-route")).rejects.toBeInstanceOf(NavigationAbortedError);
+    await expect(router.navigate("/no-such-route")).rejects.toMatchObject({
+      reason: "not-found",
+    });
+  });
+
+  it("does not update currentRoute on not-found", async () => {
+    const router = makeRouter();
+    await router.ready;
+    await router.navigate("/about");
+    await router.navigate("/no-such-route").catch(() => undefined);
+    expect(router.currentRoute?.pathname).toBe("/about");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// onBeforeNavigate
+// ---------------------------------------------------------------------------
+
+describe("onBeforeNavigate", () => {
+  it("allows navigation when guard returns void", async () => {
+    const router = makeRouter();
+    await router.ready;
+    router.onBeforeNavigate(() => undefined);
+    await expect(router.navigate("/about")).resolves.toMatchObject({ pathname: "/about" });
+  });
+
+  it("blocks navigation when guard returns false", async () => {
+    const router = makeRouter();
+    await router.ready;
+    router.onBeforeNavigate(() => false);
+    await expect(router.navigate("/about")).rejects.toMatchObject({ reason: "guard" });
+    expect(router.currentRoute?.pathname).toBe("/");
+  });
+
+  it("redirects when guard returns a HistoryLocation", async () => {
+    const router = makeRouter();
+    await router.ready;
+    router.onBeforeNavigate(({ to }) => {
+      if (to.pathname === "/about") return "/users/1";
+    });
+    const route = await router.navigate("/about");
+    expect(route.pathname).toBe("/users/1");
+  });
+
+  it("runs guards in registration order and short-circuits on first non-void", async () => {
+    const router = makeRouter();
+    await router.ready;
+    const order: number[] = [];
+    router.onBeforeNavigate(() => {
+      order.push(1);
+      return false;
+    });
+    router.onBeforeNavigate(() => {
+      order.push(2);
+    });
+    await router.navigate("/about").catch(() => undefined);
+    expect(order).toEqual([1]);
+  });
+
+  it("receives from and to in context", async () => {
+    const router = makeRouter();
+    await router.ready;
+    let capturedFrom: ResolvedRoute | null = undefined!;
+    let capturedTo: ResolvedRoute | null = undefined!;
+    router.onBeforeNavigate(({ from, to }) => {
+      capturedFrom = from;
+      capturedTo = to;
+    });
+    await router.navigate("/about");
+    expect((capturedFrom as ResolvedRoute).pathname).toBe("/");
+    expect(capturedTo.pathname).toBe("/about");
+  });
+
+  it("from is null on the initial navigation", async () => {
+    let capturedFrom: ResolvedRoute | null = undefined!;
+    const router = makeRouter({
+      plugins: [
+        (r) => {
+          r.onBeforeNavigate(({ from }) => {
+            capturedFrom = from;
+          });
+        },
+      ],
+    });
+    await router.ready;
+    expect(capturedFrom).toBeNull();
+  });
+
+  it("unsubscribe stops further guard calls", async () => {
+    const router = makeRouter();
+    await router.ready;
+    const guard = vi.fn();
+    const stop = router.onBeforeNavigate(guard);
+    stop();
+    await router.navigate("/about");
+    expect(guard).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Redirect loop
+// ---------------------------------------------------------------------------
+
+describe("redirect loop", () => {
+  it("rejects with redirect-loop after maxRedirects", async () => {
+    const router = makeRouter({ maxRedirects: 3 });
+    await router.ready;
+    router.onBeforeNavigate(() => "/about");
+    await expect(router.navigate("/about")).rejects.toMatchObject({
+      reason: "redirect-loop",
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// onRouteEnter (per-route)
+// ---------------------------------------------------------------------------
+
+describe("onRouteEnter", () => {
+  it("can block navigation", async () => {
+    const router = makeRouter({
+      routes: [
+        { path: "/", name: "home" },
+        { path: "/guarded", name: "guarded", onRouteEnter: () => false },
+      ],
+    });
+    await router.ready;
+    await expect(router.navigate("/guarded")).rejects.toMatchObject({ reason: "guard" });
+  });
+
+  it("can redirect navigation", async () => {
+    const router = makeRouter({
+      routes: [
+        { path: "/", name: "home" },
+        { path: "/redirect-me", name: "redirect-me", onRouteEnter: () => "/" },
+      ],
+    });
+    await router.ready;
+    const route = await router.navigate("/redirect-me");
+    expect(route.pathname).toBe("/");
+  });
+
+  it("passes on void", async () => {
+    const router = makeRouter({
+      routes: [
+        { path: "/", name: "home" },
+        { path: "/ok", onRouteEnter: () => undefined },
+      ],
+    });
+    await router.ready;
+    await expect(router.navigate("/ok")).resolves.toMatchObject({ pathname: "/ok" });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// onRouteLeave (per-route, post-commit)
+// ---------------------------------------------------------------------------
+
+describe("onRouteLeave", () => {
+  it("fires after commit when leaving a route", async () => {
+    const leave = vi.fn();
+    const router = makeRouter({
+      routes: [
+        { path: "/", name: "home", onRouteLeave: leave },
+        { path: "/other", name: "other" },
+      ],
+    });
+    await router.ready;
+    await router.navigate("/other");
+    expect(leave).toHaveBeenCalledOnce();
+  });
+
+  it("fires with correct context", async () => {
+    let ctx: Parameters<NonNullable<RouteDefinition["onRouteLeave"]>>[0] | undefined;
+    const router = makeRouter({
+      routes: [
+        {
+          path: "/",
+          name: "home",
+          onRouteLeave: (c) => {
+            ctx = c;
+          },
+        },
+        { path: "/other", name: "other" },
+      ],
+    });
+    await router.ready;
+    await router.navigate("/other");
+    expect(ctx?.from?.pathname).toBe("/");
+    expect(ctx?.to.pathname).toBe("/other");
+  });
+
+  it("does not fire when navigating to the same route", async () => {
+    const leave = vi.fn();
+    const router = makeRouter({
+      routes: [{ path: "/users/:id", name: "user", onRouteLeave: leave }],
+      history: createMemoryHistory({ initialUrl: "/users/1" }),
+    });
+    await router.ready;
+    await router.navigate("/users/2");
+    expect(leave).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// onRouteUpdate (per-route, post-commit, same route different params)
+// ---------------------------------------------------------------------------
+
+describe("onRouteUpdate", () => {
+  it("fires when navigating to the same route with different params", async () => {
+    const update = vi.fn();
+    const router = makeRouter({
+      routes: [{ path: "/users/:id", name: "user", onRouteUpdate: update }],
+      history: createMemoryHistory({ initialUrl: "/users/1" }),
+    });
+    await router.ready;
+    await router.navigate("/users/2");
+    expect(update).toHaveBeenCalledOnce();
+  });
+
+  it("does not fire when navigating to a different route", async () => {
+    const update = vi.fn();
+    const router = makeRouter({
+      routes: [
+        { path: "/", name: "home" },
+        { path: "/users/:id", name: "user", onRouteUpdate: update },
+      ],
+    });
+    await router.ready;
+    await router.navigate("/users/1");
+    expect(update).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// onNavigate
+// ---------------------------------------------------------------------------
+
+describe("onNavigate", () => {
+  it("fires after each navigation with { from, to }", async () => {
+    const router = makeRouter();
+    await router.ready;
+    const listener = vi.fn();
+    router.onNavigate(listener);
+    await router.navigate("/about");
+    expect(listener).toHaveBeenCalledOnce();
+    const ctx = listener.mock.calls[0]![0] as NavigationContext;
+    expect(ctx.from?.pathname).toBe("/");
+    expect(ctx.to.pathname).toBe("/about");
+  });
+
+  it("notifies multiple listeners", async () => {
+    const router = makeRouter();
+    await router.ready;
+    const a = vi.fn();
+    const b = vi.fn();
+    router.onNavigate(a);
+    router.onNavigate(b);
+    await router.navigate("/about");
+    expect(a).toHaveBeenCalledOnce();
+    expect(b).toHaveBeenCalledOnce();
+  });
+
+  it("unsubscribes correctly", async () => {
+    const router = makeRouter();
+    await router.ready;
+    const listener = vi.fn();
+    const stop = router.onNavigate(listener);
+    stop();
+    await router.navigate("/about");
+    expect(listener).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// onError
+// ---------------------------------------------------------------------------
+
+describe("onError", () => {
+  it("fires when an onBeforeNavigate guard throws", async () => {
+    const router = makeRouter();
+    await router.ready;
+    const errorHandler = vi.fn();
+    router.onError(errorHandler);
+    const boom = new Error("boom");
+    router.onBeforeNavigate(() => {
+      throw boom;
+    });
+    await router.navigate("/about").catch(() => undefined);
+    expect(errorHandler).toHaveBeenCalledOnce();
+    const [errArg, ctxArg] = errorHandler.mock.calls[0]! as [unknown, NavigationContext];
+    expect(errArg).toBe(boom);
+    expect(ctxArg.to.pathname).toBe("/about");
+  });
+
+  it("fires when an onRouteLeave hook throws", async () => {
+    const errorHandler = vi.fn();
+    const router = makeRouter({
+      routes: [
+        {
+          path: "/",
+          name: "home",
+          onRouteLeave: () => {
+            throw new Error("leave error");
+          },
+        },
+        { path: "/other", name: "other" },
+      ],
+    });
+    await router.ready;
+    router.onError(errorHandler);
+    await router.navigate("/other");
+    expect(errorHandler).toHaveBeenCalledOnce();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Children routes
+// ---------------------------------------------------------------------------
+
+describe("children routes", () => {
+  it("resolves child path under parent", async () => {
+    const router = makeRouter();
+    await router.ready;
+    const route = await router.navigate("/admin/settings");
+    expect(route.pathname).toBe("/admin/settings");
+    expect(route.name).toBe("admin-settings");
+  });
+
+  it("named navigate to child route", async () => {
+    const router = makeRouter();
+    await router.ready;
+    const route = await router.navigate({ name: "admin-settings" });
+    expect(route.pathname).toBe("/admin/settings");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Base path
+// ---------------------------------------------------------------------------
+
+describe("base path", () => {
+  it("strips base before matching", async () => {
+    const router = makeRouter({
+      history: createMemoryHistory({ initialUrl: "/app/" }),
+      base: "/app",
+    });
+    const route = await router.ready;
+    expect(route.pathname).toBe("/");
+  });
+
+  it("prepends base when committing to history", async () => {
+    const history = createMemoryHistory({ initialUrl: "/app/" });
+    const router = makeRouter({ history, base: "/app" });
+    await router.ready;
+    await router.navigate("/about");
+    expect(history.current).toBe("/app/about");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Link click interception (requires a DOM)
+// ---------------------------------------------------------------------------
+
+describe("link click interception", () => {
+  // Destroy all routers created by prior tests before each click test so only
+  // this test's router has an active click handler on document.
+  // Use dispatchEvent with explicit MouseEvent — a.click() triggers real iframe
+  // navigation in Playwright before our handler can call e.preventDefault().
+
+  beforeEach(() => {
+    allRouters.forEach((r) => {
+      r.destroy();
+    });
+    allRouters.length = 0;
+  });
+
+  afterEach(() => {
+    document.querySelectorAll("[data-test-anchor]").forEach((el) => {
+      el.remove();
+    });
+  });
+
+  it("intercepts same-origin <a href> clicks", async () => {
+    const router = makeRouter();
+    await router.ready;
+
+    const a = document.createElement("a");
+    a.href = "/about";
+    a.setAttribute("data-test-anchor", "");
+    document.body.appendChild(a);
+
+    const navigateSpy = vi.spyOn(router, "navigate");
+    const evt = new MouseEvent("click", { bubbles: true, cancelable: true, button: 0 });
+    a.dispatchEvent(evt);
+
+    expect(evt.defaultPrevented).toBe(true);
+    expect(navigateSpy).toHaveBeenCalledWith("/about");
+  });
+
+  it("does not intercept modifier-key clicks (ctrlKey)", async () => {
+    const router = makeRouter();
+    await router.ready;
+
+    // Use a cross-origin href for "should not intercept" tests to avoid iframe navigation.
+    // Our handler returns early at the origin check (href doesn't start with location.origin).
+    const a = document.createElement("a");
+    a.href = "https://example.com/page";
+    a.setAttribute("data-test-anchor", "");
+    document.body.appendChild(a);
+
+    const navigateSpy = vi.spyOn(router, "navigate");
+    const evt = new MouseEvent("click", {
+      bubbles: true,
+      cancelable: true,
+      button: 0,
+      ctrlKey: true,
+    });
+    a.dispatchEvent(evt);
+
+    expect(navigateSpy).not.toHaveBeenCalled();
+  });
+
+  it("does not intercept cross-origin links", async () => {
+    const router = makeRouter();
+    await router.ready;
+
+    const a = document.createElement("a");
+    a.href = "https://example.com/page";
+    a.setAttribute("data-test-anchor", "");
+    document.body.appendChild(a);
+
+    const navigateSpy = vi.spyOn(router, "navigate");
+    const evt = new MouseEvent("click", { bubbles: true, cancelable: true, button: 0 });
+    a.dispatchEvent(evt);
+
+    expect(navigateSpy).not.toHaveBeenCalled();
+  });
+});

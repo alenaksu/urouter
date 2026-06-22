@@ -36,6 +36,9 @@ export function createNavigationHistory(): RouterHistory {
   });
 
   return {
+    get current() {
+      return window.location.pathname + window.location.search;
+    },
     push(url) {
       void nav.navigate(url, { history: "push" });
     },

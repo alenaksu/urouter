@@ -21,6 +21,9 @@ export function createBrowserHistory(): RouterHistory {
   });
 
   return {
+    get current() {
+      return getUrl();
+    },
     push(url) {
       window.history.pushState(null, "", url);
       emitter.emit(url);
