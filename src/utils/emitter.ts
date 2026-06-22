@@ -7,7 +7,7 @@ export interface Emitter<T> {
 }
 
 /** Creates a typed single-channel event emitter backed by a `Set`. */
-export function createEmitter<T>(): Emitter<T> {
+export const createEmitter = <T>(): Emitter<T> => {
   const listeners = new Set<(value: T) => void>();
   return {
     emit(value) {
@@ -20,4 +20,4 @@ export function createEmitter<T>(): Emitter<T> {
       return () => listeners.delete(listener);
     },
   };
-}
+};

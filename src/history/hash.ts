@@ -12,7 +12,7 @@ import type { RouterHistory } from "../types.js";
  * history.push("/users/123"); // → /#/users/123
  * ```
  */
-export function createHashHistory(): RouterHistory {
+export const createHashHistory = (): RouterHistory => {
   const emitter = createEmitter<string>();
   const getUrl = (): string => window.location.hash.slice(1) || "/";
 
@@ -38,4 +38,4 @@ export function createHashHistory(): RouterHistory {
     },
     listen: (listener) => emitter.on(listener),
   };
-}
+};

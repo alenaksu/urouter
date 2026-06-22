@@ -16,7 +16,7 @@ export interface MemoryHistoryOptions {
  * const history = createMemoryHistory({ initialUrl: "/users/123" });
  * ```
  */
-export function createMemoryHistory(options?: MemoryHistoryOptions): RouterHistory {
+export const createMemoryHistory = (options?: MemoryHistoryOptions): RouterHistory => {
   const state = {
     entries: [options?.initialUrl ?? "/"] as string[],
     index: 0,
@@ -46,4 +46,4 @@ export function createMemoryHistory(options?: MemoryHistoryOptions): RouterHisto
     },
     listen: (listener) => emitter.on(listener),
   };
-}
+};

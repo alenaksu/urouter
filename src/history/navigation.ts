@@ -14,7 +14,7 @@ import type { RouterHistory } from "../types.js";
  * history.push("/users/123"); // → /users/123
  * ```
  */
-export function createNavigationHistory(): RouterHistory {
+export const createNavigationHistory = (): RouterHistory => {
   if (!("navigation" in globalThis)) {
     throw new Error(
       "createNavigationHistory: Navigation API is not available. " +
@@ -56,4 +56,4 @@ export function createNavigationHistory(): RouterHistory {
     },
     listen: (listener) => emitter.on(listener),
   };
-}
+};

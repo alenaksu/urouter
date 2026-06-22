@@ -26,16 +26,16 @@ interface FlatRoute {
 // Helpers
 // ---------------------------------------------------------------------------
 
-function deepFreeze<T>(obj: T): T {
+const deepFreeze = <T>(obj: T): T => {
   if (typeof obj !== "object" || obj === null) return obj;
   Object.freeze(obj);
   for (const value of Object.values(obj as Record<string, unknown>)) {
     deepFreeze(value);
   }
   return obj;
-}
+};
 
-function flattenRoutes(routes: readonly RouteDefinition[], parentPath = ""): FlatRoute[] {
+const flattenRoutes = (routes: readonly RouteDefinition[], parentPath = ""): FlatRoute[] => {
   const result: FlatRoute[] = [];
   for (const route of routes) {
     deepFreeze(route);
@@ -50,12 +50,12 @@ function flattenRoutes(routes: readonly RouteDefinition[], parentPath = ""): Fla
     }
   }
   return result;
-}
+};
 
-function matchUrl(
+const matchUrl = (
   pathname: string,
   flatRoutes: FlatRoute[],
-): { route: FlatRoute; params: Record<string, string> } | null {
+): { route: FlatRoute; params: Record<string, string> } | null => {
   for (const route of flatRoutes) {
     const result = route.pattern.exec({ pathname });
     if (result) {
@@ -67,30 +67,34 @@ function matchUrl(
     }
   }
   return null;
-}
+};
 
-function interpolateParams(path: string, params?: Record<string, string>): string {
+const interpolateParams = (path: string, params?: Record<string, string>): string => {
   if (!params) return path;
   return path.replace(/:([a-zA-Z_][a-zA-Z0-9_]*)/g, (_, key: string) => params[key] ?? `:${key}`);
-}
+};
 
-function buildQueryString(query?: Record<string, string>): string {
+const buildQueryString = (query?: Record<string, string>): string => {
   if (!query || Object.keys(query).length === 0) return "";
   return "?" + new URLSearchParams(query).toString();
-}
+};
 
-function buildHashStr(hash?: string): string {
+const buildHashStr = (hash?: string): string => {
   if (!hash) return "";
   return hash.startsWith("#") ? hash : "#" + hash;
-}
+};
 
-function stripBase(url: string, base: string): string {
+const stripBase = (url: string, base: string): string => {
   if (!base || !url.startsWith(base)) return url;
   return url.slice(base.length) || "/";
-}
+};
 
 /** Resolve a HistoryLocation to a base-stripped URL string. Returns null for unknown named routes. */
-function resolveToUrl(to: HistoryLocation, base: string, flatRoutes: FlatRoute[]): string | null {
+const resolveToUrl = (
+  to: HistoryLocation,
+  base: string,
+  flatRoutes: FlatRoute[],
+): string | null => {
   if (typeof to === "string") {
     return stripBase(to, base);
   }
@@ -102,13 +106,13 @@ function resolveToUrl(to: HistoryLocation, base: string, flatRoutes: FlatRoute[]
     );
   }
   return interpolateParams(to.path, to.params) + buildQueryString(to.query) + buildHashStr(to.hash);
-}
+};
 
-function buildResolvedRoute(
+const buildResolvedRoute = (
   route: FlatRoute,
   params: Record<string, string>,
   url: string,
-): ResolvedRoute {
+): ResolvedRoute => {
   const hashIdx = url.indexOf("#");
   const withoutHash = hashIdx >= 0 ? url.slice(0, hashIdx) : url;
   const hash = hashIdx >= 0 ? url.slice(hashIdx) : "";
@@ -135,13 +139,13 @@ function buildResolvedRoute(
     return { name: route.definition.name, ...base };
   }
   return base;
-}
+};
 
 // ---------------------------------------------------------------------------
 // createRouter
 // ---------------------------------------------------------------------------
 
-export function createRouter(options: RouterOptions): Router {
+export const createRouter = (options: RouterOptions): Router => {
   const { routes: routeDefs, history, base = "", maxRedirects = 10, plugins = [] } = options;
 
   const flatRoutes = flattenRoutes(routeDefs);
@@ -154,7 +158,8 @@ export function createRouter(options: RouterOptions): Router {
   const onErrorEmitter = createEmitter<{ error: unknown; context: NavigationContext }>();
 
   // -------------------------------------------------------------------------
-  // Guard result evaluation (shared between global guards and onRouteEnter)
+  // Guard result evaluation and core navigation pipeline
+  // These are mutually recursive — function declarations are required for hoisting.
   // -------------------------------------------------------------------------
 
   async function evaluateGuardResult(
@@ -178,10 +183,6 @@ export function createRouter(options: RouterOptions): Router {
     }
     return null;
   }
-
-  // -------------------------------------------------------------------------
-  // Core navigation pipeline
-  // -------------------------------------------------------------------------
 
   async function executeNavigation(
     url: string,
@@ -277,7 +278,6 @@ export function createRouter(options: RouterOptions): Router {
   }
 
   // -------------------------------------------------------------------------
-  // -------------------------------------------------------------------------
   // Cleanup controller
   // -------------------------------------------------------------------------
 
@@ -302,24 +302,22 @@ export function createRouter(options: RouterOptions): Router {
   // Click interception for <a href> links
   // -------------------------------------------------------------------------
 
-  if (typeof document !== "undefined") {
-    document.addEventListener(
-      "click",
-      (e: MouseEvent) => {
-        if (e.defaultPrevented || e.button !== 0) return;
-        if (e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return;
-        const anchor = (e.target as Element | null)?.closest("a[href]") as HTMLAnchorElement | null;
-        if (!anchor) return;
-        if (anchor.target && anchor.target !== "_self") return;
-        if (anchor.hasAttribute("download")) return;
-        if (!anchor.href.startsWith(location.origin)) return;
-        e.preventDefault();
-        const url = anchor.href.slice(location.origin.length) || "/";
-        void router.navigate(url);
-      },
-      { signal: controller.signal },
-    );
-  }
+  document.addEventListener(
+    "click",
+    (e: MouseEvent) => {
+      if (e.defaultPrevented || e.button !== 0) return;
+      if (e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return;
+      const anchor = (e.target as Element | null)?.closest("a[href]") as HTMLAnchorElement | null;
+      if (!anchor) return;
+      if (anchor.target && anchor.target !== "_self") return;
+      if (anchor.hasAttribute("download")) return;
+      if (!anchor.href.startsWith(location.origin)) return;
+      e.preventDefault();
+      const url = anchor.href.slice(location.origin.length) || "/";
+      void router.navigate(url);
+    },
+    { signal: controller.signal },
+  );
 
   // -------------------------------------------------------------------------
   // Router public API
@@ -390,4 +388,4 @@ export function createRouter(options: RouterOptions): Router {
   const ready = executeNavigation(stripBase(history.current, base), "replace", null, 0);
 
   return router;
-}
+};

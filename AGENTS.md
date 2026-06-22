@@ -42,6 +42,21 @@ docs/       # design documents
 - **Inline comments only when the WHY is non-obvious:** a hidden constraint, a subtle invariant, or a workaround for a specific bug. Never explain what the code does.
 - **Minimal scope.** No features, abstractions, or error handling beyond what the current task requires.
 
+### Functions
+
+- **Always use arrow functions** (`export const createXxx = (...): T => { ... }`) — never `function` unless mutual recursion or hoisting is strictly required.
+- **Exception:** `evaluateGuardResult` and `executeNavigation` inside `createRouter` are mutually recursive and must remain `async function` declarations.
+
+### Modern TypeScript syntax
+
+- Use `??` (null coalescing) when a fallback applies only to `null`/`undefined`; use `||` when any falsy value (e.g. empty string) should trigger the fallback.
+- Use optional chaining (`?.`) instead of manual null guards wherever possible.
+- Avoid type assertions (`as X`) — prefer narrowing.
+
+### Browser assumptions
+
+This is a browser-only package. Do **not** add `typeof document !== "undefined"`, `typeof window !== "undefined"`, or similar SSR guards — they are noise. The only exception is `createMemoryHistory`, which is explicitly designed for non-browser environments.
+
 ---
 
 ## Testing
