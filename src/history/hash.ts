@@ -1,3 +1,4 @@
+import { createEmitter } from "../utils/emitter.js";
 import type { RouterHistory } from "../types.js";
 
 /**
@@ -12,36 +13,26 @@ import type { RouterHistory } from "../types.js";
  * ```
  */
 export function createHashHistory(): RouterHistory {
-  const listeners = new Set<(url: string) => void>();
-
+  const emitter = createEmitter<string>();
   const getUrl = (): string => window.location.hash.slice(1) || "/";
 
-  const notify = (url: string): void => {
-    for (const listener of listeners) {
-      listener(url);
-    }
-  };
-
   window.addEventListener("popstate", () => {
-    notify(getUrl());
+    emitter.emit(getUrl());
   });
 
   return {
     push(url) {
       window.history.pushState(null, "", "#" + url);
-      notify(url);
+      emitter.emit(url);
     },
     replace(url) {
       window.history.replaceState(null, "", "#" + url);
-      notify(url);
+      emitter.emit(url);
     },
     go(delta) {
       // history.go(0) reloads the page in real browsers — treat as no-op
       if (delta !== 0) window.history.go(delta);
     },
-    listen(listener) {
-      listeners.add(listener);
-      return () => listeners.delete(listener);
-    },
+    listen: (listener) => emitter.on(listener),
   };
 }

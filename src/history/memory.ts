@@ -1,3 +1,4 @@
+import { createEmitter } from "../utils/emitter.js";
 import type { RouterHistory } from "../types.js";
 
 /** Options for {@link createMemoryHistory}. */
@@ -20,35 +21,26 @@ export function createMemoryHistory(options?: MemoryHistoryOptions): RouterHisto
     entries: [options?.initialUrl ?? "/"] as string[],
     index: 0,
   };
-  const listeners = new Set<(url: string) => void>();
-
-  const notify = (url: string): void => {
-    for (const listener of listeners) {
-      listener(url);
-    }
-  };
+  const emitter = createEmitter<string>();
 
   return {
     push(url) {
       state.entries.splice(state.index + 1);
       state.entries.push(url);
       state.index = state.entries.length - 1;
-      notify(url);
+      emitter.emit(url);
     },
     replace(url) {
       state.entries[state.index] = url;
-      notify(url);
+      emitter.emit(url);
     },
     go(delta) {
       const next = Math.max(0, Math.min(state.entries.length - 1, state.index + delta));
       if (next !== state.index) {
         state.index = next;
-        notify(state.entries[next]!);
+        emitter.emit(state.entries[next]!);
       }
     },
-    listen(listener) {
-      listeners.add(listener);
-      return () => listeners.delete(listener);
-    },
+    listen: (listener) => emitter.on(listener),
   };
 }
