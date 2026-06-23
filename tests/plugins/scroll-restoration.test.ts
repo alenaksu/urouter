@@ -16,6 +16,45 @@ function makeRouter(opts?: Parameters<typeof scrollRestoration>[0]) {
   });
 }
 
+describe("scrollRestoration — integration (real browser scroll)", () => {
+  let spacer: HTMLDivElement;
+
+  beforeEach(() => {
+    spacer = document.createElement("div");
+    spacer.style.height = "2000px";
+    document.body.appendChild(spacer);
+  });
+
+  afterEach(() => {
+    spacer.remove();
+    window.scrollTo(0, 0);
+  });
+
+  it("restores the actual scroll position when revisiting a page", async () => {
+    const router = makeRouter();
+    await router.ready; // "/" — from is null, nothing saved yet
+
+    window.scrollTo(0, 500);
+    expect(window.scrollY).toBe(500); // page is actually scrolled
+
+    await router.navigate("/about"); // saves { y: 500 } for "/", scrolls to top
+    expect(window.scrollY).toBe(0);
+
+    await router.navigate("/"); // restores y: 500
+    expect(window.scrollY).toBe(500);
+
+    router.destroy();
+  });
+
+  it("scrolls to top on first visit", async () => {
+    window.scrollTo(0, 300); // start scrolled (e.g. previous test residue)
+    const router = makeRouter();
+    await router.ready;
+    expect(window.scrollY).toBe(0);
+    router.destroy();
+  });
+});
+
 describe("scrollRestoration", () => {
   beforeEach(() => {
     vi.stubGlobal("scrollTo", vi.fn());
