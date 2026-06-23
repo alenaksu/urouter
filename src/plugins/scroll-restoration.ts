@@ -4,14 +4,32 @@ import type { RouterPlugin } from "../types.js";
 export interface ScrollRestorationOptions {
   /** Scroll behavior passed to `window.scrollTo`. Default: `"auto"`. */
   behavior?: ScrollBehavior;
-  /** Restore the saved scroll position when revisiting a page. Default: `true`. */
+  /**
+   * Restore the saved scroll position when revisiting a page.
+   * Set to `false` to always scroll to the top. Default: `true`.
+   */
   savedPosition?: boolean;
 }
 
 /**
  * Plugin that manages scroll position across navigations.
- * Saves the scroll position when leaving a page; restores it on return.
+ * Saves the current scroll position before leaving a page and restores it on return.
  * On first visit (or when `savedPosition` is `false`), scrolls to the top.
+ *
+ * @example
+ * ```ts
+ * import { createRouter, createBrowserHistory } from "urouter";
+ * import { scrollRestoration } from "urouter/plugins";
+ *
+ * const router = createRouter({
+ *   routes,
+ *   history: createBrowserHistory(),
+ *   plugins: [
+ *     scrollRestoration(),
+ *     // scrollRestoration({ behavior: "smooth", savedPosition: false }),
+ *   ],
+ * });
+ * ```
  */
 export const scrollRestoration =
   (options?: ScrollRestorationOptions): RouterPlugin =>

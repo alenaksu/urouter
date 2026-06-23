@@ -70,8 +70,21 @@ const matchUrl = (
 };
 
 const interpolateParams = (path: string, params?: Record<string, string>): string => {
-  if (!params) return path;
-  return path.replace(/:([a-zA-Z_][a-zA-Z0-9_]*)/g, (_, key: string) => params[key] ?? `:${key}`);
+  // Handle URLPattern optional groups: {/:param}? or {:param}?
+  // Substitute params inside; drop the whole group if the param is absent.
+  const withOptionals = path.replace(/\{([^}]*)\}\?/g, (_, group: string) => {
+    if (!params) return "";
+    const resolved = group.replace(
+      /:([a-zA-Z_][a-zA-Z0-9_]*)/g,
+      (_, key: string) => params[key] ?? `:${key}`,
+    );
+    return /:[a-zA-Z_]/.test(resolved) ? "" : resolved;
+  });
+  if (!params) return withOptionals;
+  return withOptionals.replace(
+    /:([a-zA-Z_][a-zA-Z0-9_]*)/g,
+    (_, key: string) => params[key] ?? `:${key}`,
+  );
 };
 
 const buildQueryString = (query?: Record<string, string>): string => {
@@ -145,6 +158,28 @@ const buildResolvedRoute = (
 // createRouter
 // ---------------------------------------------------------------------------
 
+/**
+ * Creates a router instance from a set of route definitions and a history backend.
+ * Plugins are installed before the initial navigation, so any guards they register
+ * participate in the first route resolution.
+ *
+ * @example
+ * ```ts
+ * import { createRouter, createBrowserHistory } from "urouter";
+ *
+ * const router = createRouter({
+ *   routes: [
+ *     { path: "/", name: "home" },
+ *     { path: "/about", name: "about" },
+ *     { path: "/users/:id", name: "user" },
+ *   ],
+ *   history: createBrowserHistory(),
+ * });
+ *
+ * await router.ready;
+ * console.log(router.currentRoute?.pathname); // "/"
+ * ```
+ */
 export const createRouter = (options: RouterOptions): Router => {
   const { routes: routeDefs, history, base = "", maxRedirects = 10, plugins = [] } = options;
 
@@ -209,7 +244,7 @@ export const createRouter = (options: RouterOptions): Router => {
       try {
         result = await guard(context);
       } catch (err) {
-        onErrorEmitter.emit({ error: err, context });
+        await onErrorEmitter.emitAsync({ error: err, context });
         throw new NavigationAbortedError(from, url, "guard");
       }
       const redirect = await evaluateGuardResult(result, context, commit, redirectCount);
@@ -222,7 +257,7 @@ export const createRouter = (options: RouterOptions): Router => {
       try {
         result = await match.route.definition.onRouteEnter(context);
       } catch (err) {
-        onErrorEmitter.emit({ error: err, context });
+        await onErrorEmitter.emitAsync({ error: err, context });
         throw new NavigationAbortedError(from, url, "guard");
       }
       const redirect = await evaluateGuardResult(result, context, commit, redirectCount);
@@ -251,7 +286,7 @@ export const createRouter = (options: RouterOptions): Router => {
         try {
           await prevFlat.definition.onRouteLeave(context);
         } catch (err) {
-          onErrorEmitter.emit({ error: err, context });
+          await onErrorEmitter.emitAsync({ error: err, context });
         }
       }
     }
@@ -262,16 +297,16 @@ export const createRouter = (options: RouterOptions): Router => {
         try {
           await match.route.definition.onRouteUpdate(context);
         } catch (err) {
-          onErrorEmitter.emit({ error: err, context });
+          await onErrorEmitter.emitAsync({ error: err, context });
         }
       }
     }
 
-    // 7. Global onNavigate listeners
+    // 7. Global onNavigate listeners (awaited sequentially)
     try {
-      onNavigateEmitter.emit(context);
+      await onNavigateEmitter.emitAsync(context);
     } catch (err) {
-      onErrorEmitter.emit({ error: err, context });
+      await onErrorEmitter.emitAsync({ error: err, context });
     }
 
     return to;
@@ -344,14 +379,15 @@ export const createRouter = (options: RouterOptions): Router => {
       return executeNavigation(url, "replace", currentRoute, 0);
     },
 
-    resolve(to: HistoryLocation): string | null {
+    resolve(to: HistoryLocation): string {
       const url = resolveToUrl(to, base, flatRoutes);
-      if (url === null) return null;
+      if (url === null) throw new NavigationAbortedError(currentRoute, to, "not-found");
       const hashIdx = url.indexOf("#");
       const withoutHash = hashIdx >= 0 ? url.slice(0, hashIdx) : url;
       const searchIdx = withoutHash.indexOf("?");
       const pathname = (searchIdx >= 0 ? withoutHash.slice(0, searchIdx) : withoutHash) || "/";
-      if (!matchUrl(pathname, flatRoutes)) return null;
+      if (!matchUrl(pathname, flatRoutes))
+        throw new NavigationAbortedError(currentRoute, to, "not-found");
       return base + url;
     },
 
@@ -360,14 +396,14 @@ export const createRouter = (options: RouterOptions): Router => {
       return () => beforeGuards.delete(guard);
     },
 
-    onNavigate(listener: (context: NavigationContext) => void): () => void {
+    onNavigate(listener: (context: NavigationContext) => void | Promise<void>): () => void {
       return onNavigateEmitter.on(listener);
     },
 
-    onError(handler: (error: unknown, context: NavigationContext) => void): () => void {
-      return onErrorEmitter.on(({ error, context }) => {
-        handler(error, context);
-      });
+    onError(
+      handler: (error: unknown, context: NavigationContext) => void | Promise<void>,
+    ): () => void {
+      return onErrorEmitter.on(({ error, context }) => handler(error, context));
     },
 
     get ready(): Promise<ResolvedRoute> {

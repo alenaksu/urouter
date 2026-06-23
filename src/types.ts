@@ -1,25 +1,75 @@
-/** Extensible route metadata — augment this interface in your project. */
+/**
+ * Extensible route metadata — augment this interface in your project to add
+ * type-safe fields to every route definition and resolved route.
+ *
+ * @example
+ * ```ts
+ * // src/router.d.ts (or any .ts file in your project)
+ * declare module "urouter" {
+ *   interface RouteMeta {
+ *     title?: string;
+ *     requiresAuth?: boolean;
+ *   }
+ * }
+ * ```
+ */
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
 export interface RouteMeta {}
 
 /**
- * A route definition. Routes passed to `createRouter` are deep-frozen at
- * construction time — all lifecycle hooks must be declared upfront.
+ * A single route definition. Routes are deep-frozen at construction time;
+ * all lifecycle hooks must be declared upfront.
+ *
+ * @example
+ * ```ts
+ * const routes: RouteDefinition[] = [
+ *   { path: "/", name: "home", meta: { title: "Home" } },
+ *   {
+ *     path: "/users/:id",
+ *     name: "user",
+ *     onRouteEnter({ to }) {
+ *       if (!isLoggedIn()) return "/login"; // redirect
+ *     },
+ *     onRouteUpdate({ to }) {
+ *       console.log("Params changed:", to.params);
+ *     },
+ *   },
+ *   {
+ *     path: "/admin",
+ *     children: [
+ *       { path: "settings", name: "admin-settings" },
+ *     ],
+ *   },
+ * ];
+ * ```
  */
 export interface RouteDefinition {
   readonly name?: string;
   readonly path: string;
   readonly meta?: Readonly<RouteMeta>;
-  /** Runs before commit. Returns `false` to block, a `HistoryLocation` to redirect, or void. */
-  readonly onRouteEnter?: (context: NavigationContext) => GuardResult | Promise<GuardResult>;
-  /** Runs after commit when the same route is matched with different params. Cannot block. */
-  readonly onRouteUpdate?: (context: NavigationContext) => void | Promise<void>;
-  /** Runs after commit when navigating away from this route. Cannot block. */
-  readonly onRouteLeave?: (context: NavigationContext) => void | Promise<void>;
+  /** Runs before commit. Returns `false` to block, a `HistoryLocation` to redirect, or `undefined` to allow. May be async. */
+  readonly onRouteEnter?: (context: NavigationContext) => MaybePromise<GuardResult>;
+  /** Runs after commit when the same route is matched with different params. Cannot block. May be async — awaited before navigation resolves. */
+  readonly onRouteUpdate?: (context: NavigationContext) => MaybePromise<void>;
+  /** Runs after commit when navigating away from this route. Cannot block. May be async — awaited before navigation resolves. */
+  readonly onRouteLeave?: (context: NavigationContext) => MaybePromise<void>;
   readonly children?: readonly RouteDefinition[];
 }
 
-/** The resolved, matched form of a route after a navigation completes. */
+/**
+ * The resolved, matched form of a route after a navigation completes.
+ *
+ * @example
+ * ```ts
+ * router.onNavigate(({ to }) => {
+ *   console.log(to.pathname); // "/users/123"
+ *   console.log(to.params);   // { id: "123" }
+ *   console.log(to.query);    // { tab: "profile" }
+ *   console.log(to.hash);     // "#section"
+ *   console.log(to.name);     // "user"
+ * });
+ * ```
+ */
 export interface ResolvedRoute {
   readonly name?: string;
   /** Matched URLPattern, e.g. `"/users/:id"`. */
@@ -33,8 +83,26 @@ export interface ResolvedRoute {
 }
 
 /**
- * Navigation target accepted by `navigate()`, `replace()`, and `resolve()`.
- * Three forms: plain string, path template with params, or named route with params.
+ * Navigation target accepted by {@link Router.navigate}, {@link Router.replace},
+ * and {@link Router.resolve}. Supports three forms:
+ * a plain string path, a path template with params, or a named route with params.
+ *
+ * @example
+ * ```ts
+ * // Plain string
+ * await router.navigate("/users/123");
+ *
+ * // Path template with params, query, and hash
+ * await router.navigate({
+ *   path: "/users/:id",
+ *   params: { id: "123" },
+ *   query: { tab: "profile" },
+ *   hash: "#bio",
+ * });
+ *
+ * // Named route
+ * await router.navigate({ name: "user", params: { id: "123" } });
+ * ```
  */
 export type HistoryLocation =
   | string
@@ -53,22 +121,93 @@ export type HistoryLocation =
       readonly state?: unknown;
     };
 
-/** The `from` and `to` routes for a navigation. `from` is `null` on the initial navigation. */
+/**
+ * The `from` and `to` routes for a navigation. `from` is `null` on the initial navigation.
+ *
+ * @example
+ * ```ts
+ * router.onNavigate(({ from, to }) => {
+ *   if (from === null) {
+ *     console.log("Initial load:", to.pathname);
+ *   } else {
+ *     console.log(`${from.pathname} → ${to.pathname}`);
+ *   }
+ * });
+ * ```
+ */
 export interface NavigationContext {
   readonly from: ResolvedRoute | null;
   readonly to: ResolvedRoute;
 }
 
-/** Return value from a navigation guard. Return `undefined`/nothing to continue, `false` to block, or a location to redirect. */
+/** Utility: a value that may be returned directly or wrapped in a `Promise`. */
+export type MaybePromise<T> = T | Promise<T>;
+
+/**
+ * Return value from a navigation guard. Return `undefined` (or nothing) to
+ * allow the navigation, `false` to block it, or a {@link HistoryLocation} to redirect.
+ *
+ * @example
+ * ```ts
+ * const guard: NavigationGuard = ({ to }) => {
+ *   if (to.meta.requiresAuth && !isLoggedIn()) {
+ *     return "/login"; // redirect
+ *   }
+ *   if (isUnderMaintenance()) {
+ *     return false; // block
+ *   }
+ *   // return undefined (or nothing) → allow
+ * };
+ * ```
+ */
 export type GuardResult = undefined | false | HistoryLocation;
 
-/** A navigation guard — runs before commit, can block or redirect. */
-export type NavigationGuard = (context: NavigationContext) => GuardResult | Promise<GuardResult>;
+/**
+ * A navigation guard — runs before each navigation commits, and can block or redirect it.
+ * May be async; the router awaits the result before proceeding.
+ *
+ * @example
+ * ```ts
+ * const authGuard: NavigationGuard = async ({ to }) => {
+ *   if (to.meta.requiresAuth) {
+ *     const ok = await checkSession();
+ *     if (!ok) return { name: "login" };
+ *   }
+ * };
+ *
+ * const unsubscribe = router.onBeforeNavigate(authGuard);
+ * // Remove the guard when no longer needed:
+ * unsubscribe();
+ * ```
+ */
+export type NavigationGuard = (context: NavigationContext) => MaybePromise<GuardResult>;
 
-/** Reason a navigation was aborted. */
+/**
+ * Reason a navigation was aborted.
+ *
+ * - `"guard"` — a guard returned `false` or threw.
+ * - `"not-found"` — no route matched the target location.
+ * - `"redirect-loop"` — the redirect chain exceeded `maxRedirects`.
+ */
 export type AbortReason = "guard" | "not-found" | "redirect-loop";
 
-/** Thrown (or returned as a rejected promise) when a navigation is aborted. */
+/**
+ * Thrown (or returned as a rejected promise) when a navigation is aborted.
+ *
+ * @example
+ * ```ts
+ * import { NavigationAbortedError } from "urouter";
+ *
+ * try {
+ *   await router.navigate("/admin");
+ * } catch (err) {
+ *   if (err instanceof NavigationAbortedError) {
+ *     console.log(err.reason); // "guard" | "not-found" | "redirect-loop"
+ *     console.log(err.from?.pathname); // previous route, or null on initial nav
+ *   }
+ * }
+ * ```
+ */
 export class NavigationAbortedError extends Error {
   constructor(
     readonly from: ResolvedRoute | null,
@@ -80,10 +219,50 @@ export class NavigationAbortedError extends Error {
   }
 }
 
-/** A plugin — receives the router instance and registers hooks or extends behaviour. */
+/**
+ * A plugin — receives the router instance at creation time and registers hooks
+ * or extends behaviour. Plugins run before the initial navigation, so any guards
+ * they register participate in the first route resolution.
+ *
+ * @example
+ * ```ts
+ * const loggerPlugin: RouterPlugin = (router) => {
+ *   router.onNavigate(({ from, to }) => {
+ *     console.log(`[router] ${from?.pathname ?? "(init)"} → ${to.pathname}`);
+ *   });
+ * };
+ *
+ * const router = createRouter({
+ *   routes,
+ *   history: createBrowserHistory(),
+ *   plugins: [loggerPlugin],
+ * });
+ * ```
+ */
 export type RouterPlugin = (router: Router) => void;
 
-/** Low-level history primitive — string-only, base-unaware. */
+/**
+ * Low-level history primitive — string-only and base-unaware.
+ * Implemented by {@link createBrowserHistory}, {@link createHashHistory},
+ * {@link createMemoryHistory}, and {@link createNavigationHistory}.
+ *
+ * You can also supply a custom implementation to integrate with
+ * frameworks or non-browser environments:
+ *
+ * @example
+ * ```ts
+ * const myHistory: RouterHistory = {
+ *   get current() { return currentUrl; },
+ *   push(url) { /* update URL *\/ },
+ *   replace(url) { /* update URL *\/ },
+ *   go(delta) { /* move in history stack *\/ },
+ *   listen(listener) {
+ *     // call listener(url) on each URL change
+ *     return () => { /* unsubscribe *\/ };
+ *   },
+ * };
+ * ```
+ */
 export interface RouterHistory {
   /** The current URL string as known by this backend. */
   readonly current: string;
@@ -100,7 +279,29 @@ export interface RouterHistory {
   listen(listener: (url: string) => void): () => void;
 }
 
-/** Options for {@link createRouter}. */
+/**
+ * Options for {@link createRouter}.
+ *
+ * @example
+ * ```ts
+ * import { createRouter, createBrowserHistory } from "urouter";
+ * import { scrollRestoration, webComponent } from "urouter/plugins";
+ *
+ * const router = createRouter({
+ *   routes: [
+ *     { path: "/", name: "home" },
+ *     { path: "/about", name: "about" },
+ *   ],
+ *   history: createBrowserHistory(),
+ *   base: "/app",         // strip "/app" prefix from all URLs
+ *   maxRedirects: 5,      // abort after 5 consecutive redirects
+ *   plugins: [
+ *     scrollRestoration(),
+ *     webComponent({ outlet: "#router-outlet" }),
+ *   ],
+ * });
+ * ```
+ */
 export interface RouterOptions {
   readonly routes: readonly RouteDefinition[];
   readonly history: RouterHistory;
@@ -111,30 +312,141 @@ export interface RouterOptions {
   readonly plugins?: readonly RouterPlugin[];
 }
 
-/** The public API of a router instance returned by `createRouter`. */
+/**
+ * The public API of a router instance returned by {@link createRouter}.
+ *
+ * @example
+ * ```ts
+ * const router = createRouter({ routes, history: createBrowserHistory() });
+ *
+ * await router.ready; // wait for initial navigation
+ *
+ * console.log(router.currentRoute?.pathname); // e.g. "/"
+ *
+ * await router.navigate("/about");
+ * await router.replace({ name: "user", params: { id: "42" } });
+ *
+ * const url = router.resolve({ name: "user", params: { id: "42" } });
+ * // url → "/users/42"
+ *
+ * const unsub = router.onBeforeNavigate(({ to }) => {
+ *   if (to.meta.requiresAuth && !isLoggedIn()) return "/login";
+ * });
+ *
+ * router.onNavigate(({ from, to }) => {
+ *   document.title = String(to.meta.title ?? "App");
+ * });
+ *
+ * router.onError((err) => console.error("Router error:", err));
+ *
+ * // When unmounting (e.g. in tests or SSR):
+ * router.destroy();
+ * ```
+ */
 export interface Router {
+  /** The last successfully resolved route, or `null` before the initial navigation completes. */
   readonly currentRoute: ResolvedRoute | null;
 
-  /** Push a new history entry and navigate to `to`. */
-  navigate(to: HistoryLocation): Promise<ResolvedRoute>;
-  /** Replace the current history entry and navigate to `to`. */
-  replace(to: HistoryLocation): Promise<ResolvedRoute>;
   /**
-   * Generate a URL from `to` without navigating.
-   * Returns `null` if no route matches or the named route does not exist.
+   * Push a new history entry and navigate to `to`.
+   *
+   * @example
+   * ```ts
+   * await router.navigate("/about");
+   * await router.navigate({ name: "user", params: { id: "42" } });
+   * ```
    */
-  resolve(to: HistoryLocation): string | null;
+  navigate(to: HistoryLocation): Promise<ResolvedRoute>;
 
-  /** Register a guard that runs before each navigation. Returns an unsubscribe function. */
+  /**
+   * Replace the current history entry and navigate to `to`.
+   * Useful for redirects that should not appear in the back-button history.
+   *
+   * @example
+   * ```ts
+   * await router.replace("/login");
+   * ```
+   */
+  replace(to: HistoryLocation): Promise<ResolvedRoute>;
+
+  /**
+   * Generate a URL string from `to` without navigating.
+   * Throws {@link NavigationAbortedError} with reason `"not-found"` if no route matches
+   * or the named route does not exist.
+   *
+   * @example
+   * ```ts
+   * const href = router.resolve({ name: "user", params: { id: "42" } });
+   * // href → "/users/42"
+   * anchor.href = href;
+   * ```
+   */
+  resolve(to: HistoryLocation): string;
+
+  /**
+   * Register a guard that runs before each navigation. Returns an unsubscribe function.
+   *
+   * @example
+   * ```ts
+   * const unsubscribe = router.onBeforeNavigate(async ({ to }) => {
+   *   if (to.meta.requiresAuth && !(await checkSession())) {
+   *     return { name: "login" }; // redirect
+   *   }
+   * });
+   *
+   * // Remove guard when component unmounts:
+   * unsubscribe();
+   * ```
+   */
   onBeforeNavigate(guard: NavigationGuard): () => void;
-  /** Register a listener that fires after each navigation commits. Returns an unsubscribe function. */
-  onNavigate(listener: (context: NavigationContext) => void): () => void;
-  /** Register an error handler for exceptions thrown inside navigation hooks. Returns an unsubscribe function. */
-  onError(handler: (error: unknown, context: NavigationContext) => void): () => void;
 
-  /** Resolves when the initial navigation completes. */
+  /**
+   * Register a listener that fires after each navigation commits. Returns an unsubscribe function.
+   *
+   * @example
+   * ```ts
+   * const unsubscribe = router.onNavigate(({ to }) => {
+   *   document.title = String(to.meta.title ?? "App");
+   * });
+   * ```
+   */
+  onNavigate(listener: (context: NavigationContext) => MaybePromise<void>): () => void;
+
+  /**
+   * Register an error handler for exceptions thrown inside navigation hooks.
+   * Returns an unsubscribe function.
+   *
+   * @example
+   * ```ts
+   * router.onError((err, context) => {
+   *   console.error("Navigation error on", context.to.pathname, err);
+   * });
+   * ```
+   */
+  onError(handler: (error: unknown, context: NavigationContext) => MaybePromise<void>): () => void;
+
+  /**
+   * Resolves when the initial navigation completes. Await this before
+   * rendering to avoid a flash of the wrong route.
+   *
+   * @example
+   * ```ts
+   * const router = createRouter({ routes, history: createBrowserHistory() });
+   * const initialRoute = await router.ready;
+   * console.log("App ready at", initialRoute.pathname);
+   * ```
+   */
   readonly ready: Promise<ResolvedRoute>;
 
-  /** Remove all event listeners (click handler, history listener). Call when unmounting the router. */
+  /**
+   * Remove all event listeners (click handler, history listener). Call when
+   * unmounting the router, e.g. in tests or SSR request handlers.
+   *
+   * @example
+   * ```ts
+   * // In a test afterEach:
+   * afterEach(() => router.destroy());
+   * ```
+   */
   destroy(): void;
 }

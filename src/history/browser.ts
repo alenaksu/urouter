@@ -2,14 +2,21 @@ import { createEmitter } from "../utils/emitter.js";
 import type { RouterHistory } from "../types.js";
 
 /**
- * Creates a browser history backend using the HTML5 History API.
- * URLs are stored as real paths (e.g. `/users/123`), requiring a server
- * configured to serve `index.html` for all routes.
+ * Creates a history backend using the HTML5 History API (`pushState` / `replaceState`).
+ * URLs are stored as real paths (e.g. `/users/123`), requiring the server to
+ * serve `index.html` for all routes (a catch-all or 404 fallback).
+ *
+ * Use {@link createHashHistory} if you cannot configure the server,
+ * or {@link createMemoryHistory} for testing and SSR.
  *
  * @example
  * ```ts
- * const history = createBrowserHistory();
- * history.push("/users/123"); // → /users/123
+ * import { createRouter, createBrowserHistory } from "urouter";
+ *
+ * const router = createRouter({
+ *   routes: [{ path: "/", name: "home" }],
+ *   history: createBrowserHistory(),
+ * });
  * ```
  */
 export const createBrowserHistory = (): RouterHistory => {

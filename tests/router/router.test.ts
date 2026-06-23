@@ -212,16 +212,18 @@ describe("resolve", () => {
     expect(router.resolve({ name: "user", params: { id: "5" } })).toBe("/users/5");
   });
 
-  it("returns null for an unknown path", async () => {
+  it("throws NavigationAbortedError for an unknown path", async () => {
     const router = makeRouter();
     await router.ready;
-    expect(router.resolve("/does-not-exist")).toBeNull();
+    expect(() => router.resolve("/does-not-exist")).toThrow(NavigationAbortedError);
+    expect(() => router.resolve("/does-not-exist")).toThrow("not-found");
   });
 
-  it("returns null for an unknown named route", async () => {
+  it("throws NavigationAbortedError for an unknown named route", async () => {
     const router = makeRouter();
     await router.ready;
-    expect(router.resolve({ name: "ghost" })).toBeNull();
+    expect(() => router.resolve({ name: "ghost" })).toThrow(NavigationAbortedError);
+    expect(() => router.resolve({ name: "ghost" })).toThrow("not-found");
   });
 
   it("preserves query and hash", async () => {
@@ -686,5 +688,153 @@ describe("link click interception", () => {
     a.dispatchEvent(evt);
 
     expect(navigateSpy).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Optional URL params — {/:param}? URLPattern group syntax
+// ---------------------------------------------------------------------------
+
+describe("optional params", () => {
+  function makeOptRouter() {
+    return createRouter({
+      routes: [
+        { path: "/packages{/:pkg}?", name: "pkg" },
+        { path: "/a{/:b}?{/:c}?", name: "multi" },
+      ],
+      history: createMemoryHistory({ initialUrl: "/packages" }),
+    });
+  }
+
+  it("resolve: optional param present", async () => {
+    const router = makeOptRouter();
+    await router.ready;
+    expect(router.resolve({ name: "pkg", params: { pkg: "react" } })).toBe("/packages/react");
+  });
+
+  it("resolve: optional param absent", async () => {
+    const router = makeOptRouter();
+    await router.ready;
+    expect(router.resolve({ name: "pkg" })).toBe("/packages");
+  });
+
+  it("resolve: optional param with empty params object", async () => {
+    const router = makeOptRouter();
+    await router.ready;
+    expect(router.resolve({ name: "pkg", params: {} })).toBe("/packages");
+  });
+
+  it("resolve: multiple optional params, first only", async () => {
+    const router = makeOptRouter();
+    await router.ready;
+    expect(router.resolve({ name: "multi", params: { b: "x" } })).toBe("/a/x");
+  });
+
+  it("navigate: optional param absent resolves correct pathname", async () => {
+    const router = makeOptRouter();
+    await router.ready;
+    const route = await router.navigate({ name: "pkg" });
+    expect(route.pathname).toBe("/packages");
+    expect(route.params).toEqual({});
+  });
+
+  it("navigate: optional param present resolves correct pathname and params", async () => {
+    const router = makeOptRouter();
+    await router.ready;
+    const route = await router.navigate({ name: "pkg", params: { pkg: "react" } });
+    expect(route.pathname).toBe("/packages/react");
+    expect(route.params).toEqual({ pkg: "react" });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Async hooks — all hooks should be awaited before navigation resolves
+// ---------------------------------------------------------------------------
+
+describe("async hooks", () => {
+  it("awaits async onNavigate listeners before navigation promise resolves", async () => {
+    const order: string[] = [];
+    const router = makeRouter({
+      routes: [
+        { path: "/", name: "home" },
+        { path: "/page", name: "page" },
+      ],
+    });
+    router.onNavigate(async () => {
+      await Promise.resolve();
+      order.push("listener");
+    });
+    await router.ready;
+    order.push("before-navigate");
+    await router.navigate("/page");
+    order.push("after-navigate");
+    expect(order).toEqual(["before-navigate", "listener", "after-navigate"]);
+  });
+
+  it("awaits async onRouteLeave before navigation promise resolves", async () => {
+    const order: string[] = [];
+    const router = createRouter({
+      routes: [
+        {
+          path: "/",
+          name: "home",
+          onRouteLeave: async () => {
+            await Promise.resolve();
+            order.push("leave");
+          },
+        },
+        { path: "/page", name: "page" },
+      ],
+      history: createMemoryHistory(),
+    });
+    await router.ready;
+    order.push("before-navigate");
+    await router.navigate("/page");
+    order.push("after-navigate");
+    expect(order).toEqual(["before-navigate", "leave", "after-navigate"]);
+  });
+
+  it("async onRouteEnter returning Promise<void> allows navigation", async () => {
+    const entered = vi.fn();
+    const router = createRouter({
+      routes: [
+        { path: "/", name: "home" },
+        {
+          path: "/lazy",
+          name: "lazy",
+          onRouteEnter: async () => {
+            await Promise.resolve();
+            entered();
+            // returns Promise<void> — should be treated as allow
+          },
+        },
+      ],
+      history: createMemoryHistory(),
+    });
+    await router.ready;
+    const route = await router.navigate("/lazy");
+    expect(route.pathname).toBe("/lazy");
+    expect(entered).toHaveBeenCalledOnce();
+  });
+
+  it("awaits multiple async onNavigate listeners in order", async () => {
+    const order: string[] = [];
+    const router = makeRouter({
+      routes: [
+        { path: "/", name: "home" },
+        { path: "/page", name: "page" },
+      ],
+    });
+    router.onNavigate(async () => {
+      await Promise.resolve();
+      order.push("first");
+    });
+    router.onNavigate(async () => {
+      await Promise.resolve();
+      order.push("second");
+    });
+    await router.ready;
+    await router.navigate("/page");
+    expect(order).toEqual(["first", "second"]);
   });
 });

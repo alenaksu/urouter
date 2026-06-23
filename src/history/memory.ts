@@ -9,11 +9,20 @@ export interface MemoryHistoryOptions {
 
 /**
  * Creates an in-memory history backend with no browser dependencies.
- * Suitable for SSR, testing, and non-browser environments.
+ * Suitable for unit tests, SSR, and non-browser environments.
+ * `go()` moves within a tracked in-memory stack (no real browser back/forward).
  *
  * @example
  * ```ts
- * const history = createMemoryHistory({ initialUrl: "/users/123" });
+ * import { createRouter, createMemoryHistory } from "urouter";
+ *
+ * // In a test:
+ * const router = createRouter({
+ *   routes: [{ path: "/", name: "home" }, { path: "/about", name: "about" }],
+ *   history: createMemoryHistory({ initialUrl: "/about" }),
+ * });
+ * await router.ready;
+ * console.log(router.currentRoute?.name); // "about"
  * ```
  */
 export const createMemoryHistory = (options?: MemoryHistoryOptions): RouterHistory => {

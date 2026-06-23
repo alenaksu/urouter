@@ -2,16 +2,27 @@ import { createEmitter } from "../utils/emitter.js";
 import type { RouterHistory } from "../types.js";
 
 /**
- * Creates a history backend using the Navigation API (Baseline 2026+).
+ * Creates a history backend using the
+ * [Navigation API](https://developer.mozilla.org/en-US/docs/Web/API/Navigation_API)
+ * (Baseline 2026+).
  *
- * Intercepts all same-origin navigations via `navigate` event — including
- * link clicks and form submissions — preventing full-page reloads. Use
- * {@link createMemoryHistory} for SSR or non-browser environments.
+ * Intercepts all same-origin navigations via the `navigate` event — including
+ * link clicks and form submissions — preventing full-page reloads without a
+ * separate click handler. Throws if the Navigation API is unavailable;
+ * use {@link createBrowserHistory} or {@link createMemoryHistory} as a fallback.
  *
  * @example
  * ```ts
- * const history = createNavigationHistory();
- * history.push("/users/123"); // → /users/123
+ * import { createRouter, createNavigationHistory, createBrowserHistory } from "urouter";
+ *
+ * const history = "navigation" in globalThis
+ *   ? createNavigationHistory()
+ *   : createBrowserHistory();
+ *
+ * const router = createRouter({
+ *   routes: [{ path: "/", name: "home" }],
+ *   history,
+ * });
  * ```
  */
 export const createNavigationHistory = (): RouterHistory => {

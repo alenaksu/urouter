@@ -2,14 +2,23 @@ import { createEmitter } from "../utils/emitter.js";
 import type { RouterHistory } from "../types.js";
 
 /**
- * Creates a hash-based history backend using `window.location.hash`.
+ * Creates a history backend using `window.location.hash`.
  * URLs are encoded as the hash fragment (e.g. `/#/users/123`), so no
- * server-side fallback configuration is required.
+ * server-side fallback configuration is required. Ideal for static file hosts
+ * such as GitHub Pages or S3.
+ *
+ * Use {@link createBrowserHistory} for clean URLs when server config is available,
+ * or {@link createNavigationHistory} for the modern Navigation API.
  *
  * @example
  * ```ts
- * const history = createHashHistory();
- * history.push("/users/123"); // → /#/users/123
+ * import { createRouter, createHashHistory } from "urouter";
+ *
+ * const router = createRouter({
+ *   routes: [{ path: "/", name: "home" }],
+ *   history: createHashHistory(),
+ *   // URL will look like: /#/about
+ * });
  * ```
  */
 export const createHashHistory = (): RouterHistory => {

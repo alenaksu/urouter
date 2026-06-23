@@ -15,6 +15,7 @@ export type {
   HistoryLocation,
   GuardResult,
   NavigationGuard,
+  MaybePromise,
   AbortReason,
   RouteMeta,
 } from "./types.js";
