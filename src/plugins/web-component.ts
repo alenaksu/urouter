@@ -1,4 +1,4 @@
-import type { NavigationContext, RouterPlugin } from "../types.js";
+import type { NavigationContext, NavigationMiddleware } from "../types.js";
 
 /** Options for {@link webComponent}. */
 export interface WebComponentOutletOptions {
@@ -13,7 +13,7 @@ type RouteElement = Element & {
 };
 
 /**
- * Plugin that manages a DOM outlet for Web Components (and Lit elements).
+ * Middleware that manages a DOM outlet for Web Components (and Lit elements).
  *
  * On route change: calls `onRouteLeave` on the outgoing element, replaces it
  * with `document.createElement(to.meta.component)`, then calls `onRouteEnter`
@@ -38,14 +38,14 @@ type RouteElement = Element & {
  *   { path: "/users/:id", name: "user", meta: { component: "page-user" } },
  * ];
  *
- * // 3. Install the plugin:
+ * // 3. Install the middleware:
  * import { createRouter, createBrowserHistory } from "urouter";
  * import { webComponent } from "urouter/plugins";
  *
  * const router = createRouter({
  *   routes,
  *   history: createBrowserHistory(),
- *   plugins: [webComponent({ outlet: "#router-outlet" })],
+ *   middlewares: [webComponent({ outlet: "#router-outlet" })],
  * });
  *
  * // 4. Optionally implement lifecycle hooks in a component:
@@ -63,30 +63,29 @@ type RouteElement = Element & {
  * customElements.define("page-user", PageUser);
  * ```
  */
-export const webComponent =
-  (options: WebComponentOutletOptions): RouterPlugin =>
-  (router) => {
-    const getOutlet = (): HTMLElement | null =>
-      typeof options.outlet === "string" ? document.querySelector(options.outlet) : options.outlet;
+export const webComponent = (options: WebComponentOutletOptions): NavigationMiddleware => {
+  const getOutlet = (): HTMLElement | null =>
+    typeof options.outlet === "string" ? document.querySelector(options.outlet) : options.outlet;
 
-    router.onNavigate((context) => {
-      const { from, to } = context;
-      const outlet = getOutlet();
-      if (!outlet) return;
+  let currentElement: RouteElement | null = null;
 
-      const component = (to.meta as Record<string, unknown>).component as string | undefined;
-      if (!component) return;
+  return async (context, next) => {
+    await next();
 
-      if (from !== null && from.path === to.path) {
-        const el: RouteElement | null = outlet.firstElementChild;
-        el?.onRouteUpdate?.(context);
-      } else {
-        const outgoing: RouteElement | null = outlet.firstElementChild;
-        outgoing?.onRouteLeave?.(context);
+    const { from, to } = context;
+    const outlet = getOutlet();
+    if (!outlet) return;
 
-        const incoming: RouteElement = document.createElement(component);
-        outlet.replaceChildren(incoming);
-        incoming.onRouteEnter?.(context);
-      }
-    });
+    const component = (to.meta as Record<string, unknown>).component as string | undefined;
+    if (!component) return;
+
+    if (currentElement && from !== null && from.path === to.path) {
+      currentElement.onRouteUpdate?.(context);
+    } else {
+      currentElement?.onRouteLeave?.(context);
+      currentElement = document.createElement(component);
+      outlet.replaceChildren(currentElement);
+      currentElement.onRouteEnter?.(context);
+    }
   };
+};

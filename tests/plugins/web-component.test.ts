@@ -33,7 +33,7 @@ describe("webComponent", () => {
     const router = createRouter({
       routes,
       history: createMemoryHistory(),
-      plugins: [webComponent({ outlet })],
+      middlewares: [webComponent({ outlet })],
     });
     await router.ready;
     expect(outlet.firstElementChild?.tagName.toLowerCase()).toBe("page-home");
@@ -44,7 +44,7 @@ describe("webComponent", () => {
     const router = createRouter({
       routes,
       history: createMemoryHistory(),
-      plugins: [webComponent({ outlet })],
+      middlewares: [webComponent({ outlet })],
     });
     await router.ready;
     await router.navigate("/about");
@@ -57,7 +57,7 @@ describe("webComponent", () => {
     const router = createRouter({
       routes,
       history: createMemoryHistory(),
-      plugins: [webComponent({ outlet })],
+      middlewares: [webComponent({ outlet })],
     });
     await router.ready;
     const outgoing = outlet.firstElementChild as Element & {
@@ -84,7 +84,7 @@ describe("webComponent", () => {
         { path: "/check", name: "check", meta: { component: "page-enter-check" } },
       ],
       history: createMemoryHistory(),
-      plugins: [webComponent({ outlet })],
+      middlewares: [webComponent({ outlet })],
     });
     await router.ready;
     await router.navigate("/check");
@@ -96,7 +96,7 @@ describe("webComponent", () => {
     const router = createRouter({
       routes,
       history: createMemoryHistory({ initialUrl: "/users/1" }),
-      plugins: [webComponent({ outlet })],
+      middlewares: [webComponent({ outlet })],
     });
     await router.ready;
     const el = outlet.firstElementChild as Element & { onRouteUpdate: ReturnType<typeof vi.fn> };
@@ -110,7 +110,7 @@ describe("webComponent", () => {
     const router = createRouter({
       routes,
       history: createMemoryHistory({ initialUrl: "/users/1" }),
-      plugins: [webComponent({ outlet })],
+      middlewares: [webComponent({ outlet })],
     });
     await router.ready;
     const original = outlet.firstElementChild;
@@ -123,7 +123,7 @@ describe("webComponent", () => {
     const router = createRouter({
       routes,
       history: createMemoryHistory(),
-      plugins: [webComponent({ outlet })],
+      middlewares: [webComponent({ outlet })],
     });
     await router.ready;
     const before = outlet.firstElementChild;
@@ -137,7 +137,7 @@ describe("webComponent", () => {
     const router = createRouter({
       routes,
       history: createMemoryHistory(),
-      plugins: [webComponent({ outlet: "#router-outlet" })],
+      middlewares: [webComponent({ outlet: "#router-outlet" })],
     });
     await router.ready;
     expect(outlet.firstElementChild?.tagName.toLowerCase()).toBe("page-home");

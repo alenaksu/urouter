@@ -5,7 +5,7 @@ A lightweight, framework-agnostic browser router for SPAs, built on modern brows
 - **[URLPattern API](https://developer.mozilla.org/en-US/docs/Web/API/URL_Pattern_API)** — expressive route matching with named parameters, wildcards, and regex groups
 - **[Navigation API](https://developer.mozilla.org/en-US/docs/Web/API/Navigation_API)** — unified interception of all navigation types (push, replace, traverse)
 - **Four history backends** — `browser` (pushState), `hash`, `memory` (SSR/tests), and `navigation` (Navigation API)
-- **Plugin system** — extend the router with lifecycle hooks; ships with `scrollRestoration` and `webComponent` plugins
+- **Middleware** — wrap the commit phase with `router.use()`; ships with `scrollRestoration` and `webComponent` middlewares
 - **Full TypeScript** — strongly typed routes, guards, and augmentable `RouteMeta`
 
 ## Browser support
@@ -232,29 +232,43 @@ const myHistory: RouterHistory = {
 };
 ```
 
-## Plugins
+## Middleware
 
-Plugins are functions that receive the router instance and register hooks or extend behaviour. They run before the initial navigation, so guards they add participate in the first route resolution.
+`router.use(middleware)` registers middleware that wraps the commit phase of every navigation — fires after all guards pass. Call `await next()` to execute the commit (history update, `currentRoute`, post-commit hooks). Code before `next()` is pre-commit; code after is post-commit.
 
 ```ts
-import type { RouterPlugin } from "urouter";
+import type { NavigationMiddleware } from "urouter";
 
-const loggerPlugin: RouterPlugin = (router) => {
-  router.onNavigate(({ from, to }) => {
-    console.log(`[router] ${from?.pathname ?? "(init)"} → ${to.pathname}`);
-  });
+const loggerMiddleware: NavigationMiddleware = async ({ from, to }, next) => {
+  console.log(`[router] ${from?.pathname ?? "(init)"} → ${to.pathname}`);
+  await next();
 };
 
 const router = createRouter({
   routes,
   history: createBrowserHistory(),
-  plugins: [loggerPlugin],
+  middlewares: [loggerMiddleware], // registered before initial navigation
+});
+
+// or dynamically:
+const unsub = router.use(loggerMiddleware);
+unsub(); // remove when done
+```
+
+### View Transitions API
+
+`router.use` is the right place to wrap navigations with `document.startViewTransition`. Works with any reactive framework (Lit, React, Vue) — `next()` commits the route and triggers reactive updates:
+
+```ts
+router.use(async (ctx, next) => {
+  if (!document.startViewTransition) return next();
+  await document.startViewTransition(() => next()).ready;
 });
 ```
 
-### `scrollRestoration` plugin
+### `scrollRestoration` middleware
 
-Saves the scroll position on each page leave and restores it on return. Scrolls to the top on first visit.
+Saves the scroll position before commit and restores it after. Scrolls to the top on first visit.
 
 ```ts
 import { createRouter, createBrowserHistory } from "urouter";
@@ -263,7 +277,7 @@ import { scrollRestoration } from "urouter/plugins";
 const router = createRouter({
   routes,
   history: createBrowserHistory(),
-  plugins: [
+  middlewares: [
     scrollRestoration(),
     // scrollRestoration({ behavior: "smooth" }),
     // scrollRestoration({ savedPosition: false }), // always scroll to top
@@ -271,7 +285,7 @@ const router = createRouter({
 });
 ```
 
-### `webComponent` plugin
+### `webComponent` middleware
 
 Manages a DOM outlet for Web Components (and [Lit](https://lit.dev/) elements). Creates the component element from `meta.component` on route change, and calls duck-typed lifecycle hooks (`onRouteEnter`, `onRouteUpdate`, `onRouteLeave`) when present on the element.
 
@@ -289,13 +303,13 @@ const routes = [
   { path: "/users/:id", name: "user", meta: { component: "page-user" } },
 ];
 
-// 3. Install the plugin with a CSS selector or element reference:
+// 3. Install the middleware with a CSS selector or element reference:
 import { webComponent } from "urouter/plugins";
 
 const router = createRouter({
   routes,
   history: createBrowserHistory(),
-  plugins: [webComponent({ outlet: "#router-outlet" })],
+  middlewares: [webComponent({ outlet: "#router-outlet" })],
 });
 ```
 
@@ -342,10 +356,10 @@ Full API documentation with examples is available in the TypeScript source (JSDo
 | `NavigationContext`       | interface | `{ from, to }` passed to all hooks                    |
 | `HistoryLocation`         | type      | Navigate target (string, path object, or named route) |
 | `NavigationGuard`         | type      | Guard function type                                   |
-| `RouterPlugin`            | type      | Plugin function type                                  |
+| `NavigationMiddleware`    | type      | Middleware function type                              |
 | `RouteMeta`               | interface | Augmentable route metadata                            |
 
-Plugins export from `"urouter/plugins"`:
+Middlewares export from `"urouter/plugins"`:
 
 | Export              | Description                |
 | ------------------- | -------------------------- |

@@ -119,7 +119,7 @@ const router = createRouter({
   history: createBrowserHistory(),
   base: "/app", // optional — stripped before matching, prepended on navigate
   // maxRedirects: 10,  // optional, default 10; set to 0 to disable redirect chaining
-  plugins: [scrollRestoration(), lit({ outlet: "#outlet" })],
+  middlewares: [scrollRestoration(), webComponent({ outlet: "#outlet" })],
 });
 
 // router.ready resolves when the initial navigation to the current URL completes
@@ -131,9 +131,9 @@ required. `router.ready` is a `Promise<ResolvedRoute>` that resolves when the in
 navigation completes. Awaiting it is optional but ensures the first route is rendered
 before continuing.
 
-**Plugins** are functions that receive the router instance and register hooks or extend
-behaviour. They run once, in order, immediately after `createRouter` returns. Can also
-be called manually on an existing router instance.
+**Middlewares** registered in `RouterOptions.middlewares` are installed before the initial
+navigation so they participate in the first route resolution. Use `router.use()` to
+register middleware dynamically after creation.
 
 ---
 
@@ -194,7 +194,8 @@ try {
 ### `router.resolve()`
 
 Generates a URL string from a `HistoryLocation` without navigating. Pure function — no
-guards run, no history side effects. Respects `base`. Returns `null` if no route matches.
+guards run, no history side effects. Respects `base`. Throws `NavigationAbortedError`
+with `reason === "not-found"` if no route matches.
 
 ```ts
 // Named route with params
@@ -208,17 +209,6 @@ router.resolve({ path: "/users/:id", params: { id: "456" } });
 // Plain string — validated and base-prepended; hash and query are preserved
 router.resolve("/users/123");
 // → "/users/123"
-
-router.resolve("/users/123?tab=posts#section");
-// → "/users/123?tab=posts#section"
-
-// No match — no route pattern matched the pathname
-router.resolve("/nonexistent");
-// → null
-
-// Named route not found — returns null
-router.resolve({ name: "ghost" });
-// → null
 ```
 
 Useful for generating `href` values in templates without triggering navigation.
@@ -229,9 +219,6 @@ Read-only. `null` until the first navigation completes. After that, always a
 `ResolvedRoute`.
 
 ```ts
-console.log(router.currentRoute);
-// null  (before any navigation)
-
 await router.navigate("/users/123");
 
 console.log(router.currentRoute);
@@ -258,16 +245,17 @@ For every navigation, hooks execute in this order:
 1. onBeforeNavigate  global guards — can block or redirect
 2. onRouteEnter      per-route hook on the incoming route — can block
 
-── commit ──────────  URL changes, currentRoute updated
+── middleware ──────  wraps the commit phase (next() triggers steps below)
 
-3. onRouteLeave      per-route hook on the outgoing route — cannot block
-4. onRouteUpdate     per-route hook on same-route param change — cannot block
-5. onNavigate        global post-commit listeners
+3. [commit]          URL changes, currentRoute updated
+4. onRouteLeave      per-route hook on the outgoing route — cannot block
+5. onRouteUpdate     per-route hook on same-route param change — cannot block
+6. onNavigate        global post-commit listeners
 ```
 
 ### `router.onBeforeNavigate(guard)`
 
-Registers an async guard that runs before the navigation commits. Route-level hooks fire after commit.
+Registers an async guard that runs before the navigation commits.
 Returns an unsubscribe function.
 
 Guards run **in registration order**. The pipeline **short-circuits** on the first
@@ -305,40 +293,72 @@ stop();
 redirects (default `10`), the navigation rejects with a `NavigationAbortedError` where
 `reason === "redirect-loop"`.
 
-### `router.onNavigate(listener)`
+### `router.use(middleware)`
 
-Registers a listener that fires **after** navigation commits (history entry
-pushed/replaced, `currentRoute` updated). Also returns an unsubscribe function.
+Registers middleware that **wraps the commit phase** of every navigation. Fires after all
+guards pass. Returns an unsubscribe function.
+
+Call `await next()` inside the middleware to trigger the commit (history update,
+`currentRoute`, post-commit hooks). Code before `next()` runs pre-commit; code after
+runs post-commit.
+
+If `next()` is not called, the commit runs automatically after the middleware returns
+(with a `console.warn`).
 
 ```ts
-const stop = router.onNavigate(({ from, to }) => {
-  console.log(`Navigated from ${from?.pathname ?? "(none)"} to ${to.pathname}`);
-  console.log("Params:", to.params);
+const stop = router.use(async ({ from, to }, next) => {
+  console.log("about to commit:", to.pathname);
+  await next();
+  console.log("committed:", router.currentRoute?.pathname);
 });
 
 stop(); // unsubscribe
 ```
 
-#### View Transition API
-
-`onNavigate` fires post-commit before any DOM update, making it the right place to
-wrap component swaps in a view transition. Nothing mutates the DOM between commit and
-`onNavigate`, so the "before" snapshot is always clean.
+**Multiple middlewares** compose in registration order — first registered wraps outermost:
 
 ```ts
-router.onNavigate(({ to }) => {
-  const update = () => {
-    outlet.innerHTML = "";
-    outlet.appendChild(document.createElement(to.meta.component));
-  };
+router.use(async (ctx, next) => {
+  /* outer */ await next(); /* outer-after */
+});
+router.use(async (ctx, next) => {
+  /* inner */ await next(); /* inner-after */
+});
+// execution: outer → inner → commit → inner-after → outer-after
+```
 
-  if (!document.startViewTransition) {
-    update();
-  } else {
-    document.startViewTransition(update);
-  }
+#### View Transitions API
+
+`router.use` is the right hook for View Transitions — it lets you wrap the DOM update
+(triggered via `onNavigate` or a reactive binding) inside `document.startViewTransition`:
+
+```ts
+router.use(async (ctx, next) => {
+  if (!document.startViewTransition) return next();
+  // .ready fires after new DOM is captured, before animation completes
+  await document.startViewTransition(() => next()).ready;
 });
 ```
+
+This works with any reactive framework (Lit, React, Vue): `next()` commits the route,
+which triggers reactive bindings to update the DOM — the browser then captures the new
+state for the transition animation.
+
+### `router.onNavigate(listener)`
+
+Registers a listener that fires **after** navigation commits (history entry
+pushed/replaced, `currentRoute` updated). Returns an unsubscribe function.
+
+```ts
+const stop = router.onNavigate(({ from, to }) => {
+  console.log(`Navigated from ${from?.pathname ?? "(none)"} to ${to.pathname}`);
+});
+
+stop(); // unsubscribe
+```
+
+Listeners may be async — they are awaited sequentially before the `navigate()` promise
+resolves.
 
 ### `router.onError(handler)`
 
@@ -355,44 +375,53 @@ stop(); // unsubscribe
 
 ---
 
-## Plugins
+## Middleware (extending the router)
 
-A plugin is a function that receives the router instance and registers hooks or extends
-behaviour. Plugins run once in order immediately after `createRouter` returns.
+`NavigationMiddleware` is the single extension mechanism. It replaces the old
+`RouterPlugin` pattern — rather than receiving a router instance to register hooks,
+middleware IS the hook. Closure state provides any setup data the middleware needs.
 
 ```ts
-type RouterPlugin = (router: Router) => void;
+type NavigationMiddleware = (
+  context: NavigationContext,
+  next: () => Promise<void>,
+) => MaybePromise<void>;
 ```
 
-Plugins are passed via `RouterOptions.plugins`, or called manually on an existing
-instance:
+Middlewares are registered either at construction time (participate in initial
+navigation) or dynamically:
 
 ```ts
-// via options (recommended — ensures plugins run before any navigation)
-const router = createRouter({ routes, history, plugins: [myPlugin] });
+// At construction — participates in the initial navigation
+const router = createRouter({
+  routes,
+  history,
+  middlewares: [myMiddleware],
+});
 
-// manually (equivalent, but must be called before first navigation if order matters)
-myPlugin(router);
+// Dynamically — participates in all subsequent navigations
+const unsub = router.use(myMiddleware);
+unsub(); // remove it when done
 ```
 
-### Built-in plugins
+### Built-in middlewares
 
-Built-in plugins are available from the `"urouter/plugins"` sub-path:
+Available from the `"urouter/plugins"` sub-path:
 
 ```ts
-import { scrollRestoration, lit } from "urouter/plugins";
+import { scrollRestoration, webComponent } from "urouter/plugins";
 ```
 
 #### `scrollRestoration(options?)`
 
-Restores scroll position on navigation. On back/forward, restores the saved position for
-that history entry. On forward navigation, scrolls to the top.
+Saves scroll position before commit, restores it after. On first visit (or when
+`savedPosition` is `false`), scrolls to the top.
 
 ```ts
 const router = createRouter({
   routes,
   history: createBrowserHistory(),
-  plugins: [scrollRestoration({ behavior: "smooth" })],
+  middlewares: [scrollRestoration({ behavior: "smooth" })],
 });
 ```
 
@@ -405,46 +434,29 @@ interface ScrollRestorationOptions {
 }
 ```
 
-#### `lit(options)`
+#### `webComponent(options)`
 
-Manages a DOM outlet element for Lit / Web Components. On each navigation, swaps the
-active custom element in the outlet and calls route lifecycle hooks on the component
-instance.
+Manages a DOM outlet for Web Components / Lit elements. On route change, swaps the
+active element and calls `onRouteLeave`/`onRouteEnter`. On same-route navigation,
+calls `onRouteUpdate` without replacing the element.
 
 ```ts
 const router = createRouter({
   routes,
   history: createBrowserHistory(),
-  plugins: [lit({ outlet: "#outlet" })],
+  middlewares: [webComponent({ outlet: "#outlet" })],
 });
 ```
 
 Options:
 
 ```ts
-interface LitOutletOptions {
+interface WebComponentOutletOptions {
   outlet: string | HTMLElement; // CSS selector or direct element reference (for shadow DOM)
 }
 ```
 
 Requires `RouteMeta.component: string` — the custom element tag name to instantiate.
-
-**Behaviour on navigation (`from.path !== to.path` — different route):**
-
-1. Calls `outgoingEl.onRouteLeave?.(context)` on the current element if the method exists
-2. Creates `document.createElement(to.meta.component)`
-3. Swaps the element in the outlet
-4. Calls `incomingEl.onRouteEnter?.(context)` on the new element if the method exists
-
-**Behaviour on same-route navigation (`from.path === to.path` — same route, different params):**
-
-1. Calls `el.onRouteUpdate?.(context)` on the element if the method exists
-
-Params are not set as attributes — components access them via the `NavigationContext`
-passed to their lifecycle hooks (`to.params`).
-
-Route lifecycle hooks (`onRouteEnter`, `onRouteUpdate`, `onRouteLeave`) are duck-typed —
-the plugin checks for their presence at runtime. No interface implementation is required.
 
 ---
 
@@ -477,17 +489,13 @@ click handling is needed.
 
 ### `app.ts`
 
-Components are loaded lazily via `onRouteEnter`. The custom element is registered the
-first time its route is visited; subsequent visits are no-ops because `customElements.define`
-is idempotent.
-
 ```ts
 import { createRouter, createBrowserHistory } from "urouter";
-import { scrollRestoration, lit } from "urouter/plugins";
+import { scrollRestoration, webComponent } from "urouter/plugins";
 
 declare module "urouter" {
   interface RouteMeta {
-    component: string; // custom element tag name
+    component: string;
   }
 }
 
@@ -508,23 +516,14 @@ const routes = [
       await import("./components/page-user.js");
     },
   },
-  {
-    name: "admin",
-    path: "/admin",
-    meta: { component: "page-admin" },
-    onRouteEnter: async () => {
-      await import("./components/page-admin.js");
-    },
-  },
 ];
 
 const router = createRouter({
   routes,
   history: createBrowserHistory(),
-  plugins: [scrollRestoration(), lit({ outlet: "#outlet" })],
+  middlewares: [scrollRestoration(), webComponent({ outlet: "#outlet" })],
 });
 
-// router automatically navigates to the current URL — await ready for the first render
 await router.ready;
 ```
 
@@ -539,19 +538,16 @@ import type { NavigationContext } from "urouter";
 export class PageUser extends LitElement {
   private userId = "";
 
-  // called by lit() when this component is first mounted
   onRouteEnter({ to }: NavigationContext) {
     this.userId = to.params.id;
     this.requestUpdate();
   }
 
-  // called by lit() when navigating to same route with different params
   onRouteUpdate({ to }: NavigationContext) {
     this.userId = to.params.id;
     this.requestUpdate();
   }
 
-  // called by lit() before this component is replaced
   onRouteLeave({ from }: NavigationContext) {
     console.log("leaving user route", from?.params);
   }
@@ -575,9 +571,9 @@ interface RouteDefinition {
   readonly name?: string;
   readonly path: string;
   readonly meta?: Readonly<RouteMeta>;
-  readonly onRouteEnter?: (context: NavigationContext) => GuardResult | Promise<GuardResult>;
-  readonly onRouteUpdate?: (context: NavigationContext) => void | Promise<void>;
-  readonly onRouteLeave?: (context: NavigationContext) => void | Promise<void>;
+  readonly onRouteEnter?: (context: NavigationContext) => MaybePromise<GuardResult>;
+  readonly onRouteUpdate?: (context: NavigationContext) => MaybePromise<void>;
+  readonly onRouteLeave?: (context: NavigationContext) => MaybePromise<void>;
   readonly children?: readonly RouteDefinition[];
 }
 
@@ -585,7 +581,7 @@ interface RouteDefinition {
 interface ResolvedRoute {
   readonly name?: string;
   readonly path: string; // matched URLPattern, e.g. "/users/:id"
-  readonly pathname: string; // actual URL pathname,  e.g. "/users/123"
+  readonly pathname: string; // actual URL pathname, e.g. "/users/123"
   readonly params: Readonly<Record<string, string>>;
   readonly query: Readonly<Record<string, string>>;
   readonly hash: string;
@@ -615,8 +611,13 @@ interface NavigationContext {
   readonly to: ResolvedRoute;
 }
 
-type GuardResult = void | false | HistoryLocation;
-type NavigationGuard = (context: NavigationContext) => GuardResult | Promise<GuardResult>;
+type MaybePromise<T> = T | Promise<T>;
+type GuardResult = undefined | false | HistoryLocation;
+type NavigationGuard = (context: NavigationContext) => MaybePromise<GuardResult>;
+type NavigationMiddleware = (
+  context: NavigationContext,
+  next: () => Promise<void>,
+) => MaybePromise<void>;
 
 type AbortReason = "guard" | "not-found" | "redirect-loop";
 
@@ -626,11 +627,9 @@ class NavigationAbortedError extends Error {
   readonly reason: AbortReason;
 }
 
-// Plugin — receives the router instance, registers hooks or extends behaviour
-type RouterPlugin = (router: Router) => void;
-
 // Low-level history primitive — string-only, base-unaware
 interface RouterHistory {
+  readonly current: string;
   push(url: string): void;
   replace(url: string): void;
   go(delta: number): void;
@@ -642,7 +641,7 @@ interface RouterOptions {
   readonly history: RouterHistory;
   readonly base?: string; // stripped before matching, prepended on navigate
   readonly maxRedirects?: number; // default: 10
-  readonly plugins?: readonly RouterPlugin[];
+  readonly middlewares?: readonly NavigationMiddleware[];
 }
 
 interface Router {
@@ -650,25 +649,27 @@ interface Router {
 
   navigate(to: HistoryLocation): Promise<ResolvedRoute>;
   replace(to: HistoryLocation): Promise<ResolvedRoute>;
-  resolve(to: HistoryLocation): string | null;
+  resolve(to: HistoryLocation): string;
 
   onBeforeNavigate(guard: NavigationGuard): () => void;
-  onNavigate(listener: (context: NavigationContext) => void): () => void;
-  onError(handler: (error: unknown, context: NavigationContext) => void): () => void;
+  use(middleware: NavigationMiddleware): () => void;
+  onNavigate(listener: (context: NavigationContext) => MaybePromise<void>): () => void;
+  onError(handler: (error: unknown, context: NavigationContext) => MaybePromise<void>): () => void;
 
-  readonly ready: Promise<ResolvedRoute>; // resolves when the initial navigation completes
+  readonly ready: Promise<ResolvedRoute>;
+  destroy(): void;
 }
 
-// Built-in plugins — import from "urouter/plugins"
+// Built-in middlewares — import from "urouter/plugins"
 interface ScrollRestorationOptions {
   behavior?: ScrollBehavior; // default "auto"
   savedPosition?: boolean; // default true
 }
 
-interface LitOutletOptions {
+interface WebComponentOutletOptions {
   outlet: string | HTMLElement;
 }
 
-function scrollRestoration(options?: ScrollRestorationOptions): RouterPlugin;
-function lit(options: LitOutletOptions): RouterPlugin;
+function scrollRestoration(options?: ScrollRestorationOptions): NavigationMiddleware;
+function webComponent(options: WebComponentOutletOptions): NavigationMiddleware;
 ```

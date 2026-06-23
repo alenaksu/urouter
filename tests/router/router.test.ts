@@ -39,17 +39,15 @@ function makeRouter(overrides?: Partial<Parameters<typeof createRouter>[0]>) {
 
 describe("createRouter", () => {
   it("currentRoute is null before the initial navigation commits", async () => {
-    // Use an async guard so the pipeline yields before committing
     let capturedDuringNav: ResolvedRoute | null = undefined!;
     const router = createRouter({
       routes,
       history: createMemoryHistory(),
-      plugins: [
-        (r) => {
-          r.onBeforeNavigate(async () => {
-            await Promise.resolve();
-            capturedDuringNav = r.currentRoute;
-          });
+      middlewares: [
+        async (context, next) => {
+          await Promise.resolve();
+          capturedDuringNav = router.currentRoute; // before next() — not yet committed
+          await next();
         },
       ],
     });
@@ -327,11 +325,10 @@ describe("onBeforeNavigate", () => {
   it("from is null on the initial navigation", async () => {
     let capturedFrom: ResolvedRoute | null = undefined!;
     const router = makeRouter({
-      plugins: [
-        (r) => {
-          r.onBeforeNavigate(({ from }) => {
-            capturedFrom = from;
-          });
+      middlewares: [
+        async ({ from }, next) => {
+          capturedFrom = from;
+          await next();
         },
       ],
     });
@@ -836,5 +833,139 @@ describe("async hooks", () => {
     await router.ready;
     await router.navigate("/page");
     expect(order).toEqual(["first", "second"]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// router.use — navigation middleware
+// ---------------------------------------------------------------------------
+
+describe("router.use (middleware)", () => {
+  it("fires after guards, before onNavigate", async () => {
+    const order: string[] = [];
+    const router = makeRouter();
+    router.onBeforeNavigate(() => {
+      order.push("guard");
+    });
+    router.use(async (ctx, next) => {
+      order.push("middleware-pre");
+      await next();
+      order.push("middleware-post");
+    });
+    router.onNavigate(() => {
+      order.push("onNavigate");
+    });
+    await router.ready;
+    order.length = 0;
+    await router.navigate("/about");
+    expect(order).toEqual(["guard", "middleware-pre", "onNavigate", "middleware-post"]);
+  });
+
+  it("currentRoute holds previous route before next(), new route after", async () => {
+    let before: unknown = "unset";
+    let after: unknown = "unset";
+    const router = makeRouter();
+    await router.ready; // on "/" now
+    router.use(async (ctx, next) => {
+      before = router.currentRoute?.pathname;
+      await next();
+      after = router.currentRoute?.pathname;
+    });
+    await router.navigate("/about");
+    expect(before).toBe("/");
+    expect(after).toBe("/about");
+  });
+
+  it("async middleware is fully awaited before navigate() resolves", async () => {
+    const order: string[] = [];
+    const router = makeRouter();
+    router.use(async (ctx, next) => {
+      await next();
+      await Promise.resolve();
+      order.push("middleware-done");
+    });
+    await router.ready;
+    order.push("before-navigate");
+    await router.navigate("/about");
+    order.push("after-navigate");
+    expect(order).toEqual(["before-navigate", "middleware-done", "after-navigate"]);
+  });
+
+  it("multiple middlewares compose in registration order", async () => {
+    const order: string[] = [];
+    const router = makeRouter();
+    router.use(async (ctx, next) => {
+      order.push("mw1-pre");
+      await next();
+      order.push("mw1-post");
+    });
+    router.use(async (ctx, next) => {
+      order.push("mw2-pre");
+      await next();
+      order.push("mw2-post");
+    });
+    await router.ready;
+    order.length = 0;
+    await router.navigate("/about");
+    expect(order).toEqual(["mw1-pre", "mw2-pre", "mw2-post", "mw1-post"]);
+  });
+
+  it("middleware that skips next() still commits (safety net) and warns", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(vi.fn());
+    const router = makeRouter();
+    router.use(async () => {
+      // intentionally never calls next()
+    });
+    await router.ready;
+    await router.navigate("/about");
+    expect(router.currentRoute?.pathname).toBe("/about");
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("did not call next()"));
+    warnSpy.mockRestore();
+  });
+
+  it("calling next() twice is a no-op on the second call", async () => {
+    let navigateCallCount = 0;
+    const router = makeRouter();
+    router.onNavigate(() => {
+      navigateCallCount++;
+    });
+    router.use(async (ctx, next) => {
+      await next();
+      await next(); // second call should be ignored
+    });
+    await router.ready;
+    navigateCallCount = 0;
+    await router.navigate("/about");
+    expect(navigateCallCount).toBe(1);
+  });
+
+  it("unsubscribe removes the middleware", async () => {
+    const called = vi.fn();
+    const router = makeRouter();
+    const unsub = router.use(async (ctx, next) => {
+      called();
+      await next();
+    });
+    await router.ready;
+    unsub();
+    await router.navigate("/about");
+    expect(called).not.toHaveBeenCalled();
+  });
+
+  it("middlewares option seeds before the initial navigation", async () => {
+    let firedOnInitial = false;
+    const router = createRouter({
+      routes,
+      history: createMemoryHistory(),
+      middlewares: [
+        async (ctx, next) => {
+          firedOnInitial = true;
+          await next();
+        },
+      ],
+    });
+    allRouters.push(router);
+    await router.ready;
+    expect(firedOnInitial).toBe(true);
   });
 });

@@ -1,4 +1,4 @@
-import type { RouterPlugin } from "../types.js";
+import type { NavigationMiddleware } from "../types.js";
 
 /** Options for {@link scrollRestoration}. */
 export interface ScrollRestorationOptions {
@@ -12,8 +12,8 @@ export interface ScrollRestorationOptions {
 }
 
 /**
- * Plugin that manages scroll position across navigations.
- * Saves the current scroll position before leaving a page and restores it on return.
+ * Middleware that manages scroll position across navigations.
+ * Saves the current scroll position before the commit and restores it after.
  * On first visit (or when `savedPosition` is `false`), scrolls to the top.
  *
  * @example
@@ -24,26 +24,22 @@ export interface ScrollRestorationOptions {
  * const router = createRouter({
  *   routes,
  *   history: createBrowserHistory(),
- *   plugins: [
+ *   middlewares: [
  *     scrollRestoration(),
  *     // scrollRestoration({ behavior: "smooth", savedPosition: false }),
  *   ],
  * });
  * ```
  */
-export const scrollRestoration =
-  (options?: ScrollRestorationOptions): RouterPlugin =>
-  (router) => {
-    const behavior = options?.behavior ?? "auto";
-    const restore = options?.savedPosition ?? true;
-    const positions = new Map<string, { x: number; y: number }>();
+export const scrollRestoration = (options?: ScrollRestorationOptions): NavigationMiddleware => {
+  const behavior = options?.behavior ?? "auto";
+  const restore = options?.savedPosition ?? true;
+  const positions = new Map<string, { x: number; y: number }>();
 
-    router.onBeforeNavigate(({ from }) => {
-      if (from) positions.set(from.pathname, { x: window.scrollX, y: window.scrollY });
-    });
-
-    router.onNavigate(({ to }) => {
-      const saved = restore ? positions.get(to.pathname) : undefined;
-      window.scrollTo({ top: saved?.y ?? 0, left: saved?.x ?? 0, behavior });
-    });
+  return async ({ from, to }, next) => {
+    if (from) positions.set(from.pathname, { x: window.scrollX, y: window.scrollY });
+    await next();
+    const saved = restore ? positions.get(to.pathname) : undefined;
+    window.scrollTo({ top: saved?.y ?? 0, left: saved?.x ?? 0, behavior });
   };
+};

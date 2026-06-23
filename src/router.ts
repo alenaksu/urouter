@@ -5,6 +5,7 @@ import {
   type HistoryLocation,
   type NavigationContext,
   type NavigationGuard,
+  type NavigationMiddleware,
   type ResolvedRoute,
   type RouteDefinition,
   type Router,
@@ -181,7 +182,13 @@ const buildResolvedRoute = (
  * ```
  */
 export const createRouter = (options: RouterOptions): Router => {
-  const { routes: routeDefs, history, base = "", maxRedirects = 10, plugins = [] } = options;
+  const {
+    routes: routeDefs,
+    history,
+    base = "",
+    maxRedirects = 10,
+    middlewares: middlewareList = [],
+  } = options;
 
   const flatRoutes = flattenRoutes(routeDefs);
 
@@ -189,6 +196,7 @@ export const createRouter = (options: RouterOptions): Router => {
   let expectingHistoryChange = false;
 
   const beforeGuards = new Set<NavigationGuard>();
+  const middlewareSet = new Set<NavigationMiddleware>(middlewareList);
   const onNavigateEmitter = createEmitter<NavigationContext>();
   const onErrorEmitter = createEmitter<{ error: unknown; context: NavigationContext }>();
 
@@ -264,49 +272,77 @@ export const createRouter = (options: RouterOptions): Router => {
       if (redirect !== null) return redirect;
     }
 
-    // 3. Commit (skip for external navigations — URL already changed)
-    if (commit !== "external") {
-      expectingHistoryChange = true;
-      const fullUrl = base + url;
-      if (commit === "push") {
-        history.push(fullUrl);
-      } else {
-        history.replace(fullUrl);
-      }
-    }
-
-    // 4. Update currentRoute
+    // Snapshot currentRoute before any middleware or commit runs.
     const prevRoute = currentRoute;
-    currentRoute = to;
 
-    // 5. Post-commit: onRouteLeave on the outgoing route (only when the route pattern changes)
-    if (prevRoute !== null && prevRoute.path !== to.path) {
-      const prevFlat = flatRoutes.find((r) => r.path === prevRoute.path);
-      if (prevFlat?.definition.onRouteLeave) {
-        try {
-          await prevFlat.definition.onRouteLeave(context);
-        } catch (err) {
-          await onErrorEmitter.emitAsync({ error: err, context });
+    // core() executes steps 3–7: commit, currentRoute update, post-commit hooks.
+    const core = async (): Promise<void> => {
+      // 3. Commit (skip for external navigations — URL already changed)
+      if (commit !== "external") {
+        expectingHistoryChange = true;
+        const fullUrl = base + url;
+        if (commit === "push") {
+          history.push(fullUrl);
+        } else {
+          history.replace(fullUrl);
         }
       }
-    }
 
-    // 6. Post-commit: onRouteUpdate if same route, different params
-    if (prevRoute !== null && prevRoute.path === to.path) {
-      if (match.route.definition.onRouteUpdate) {
-        try {
-          await match.route.definition.onRouteUpdate(context);
-        } catch (err) {
-          await onErrorEmitter.emitAsync({ error: err, context });
+      // 4. Update currentRoute
+      currentRoute = to;
+
+      // 5. Post-commit: onRouteLeave on the outgoing route (only when the route pattern changes)
+      if (prevRoute !== null && prevRoute.path !== to.path) {
+        const prevFlat = flatRoutes.find((r) => r.path === prevRoute.path);
+        if (prevFlat?.definition.onRouteLeave) {
+          try {
+            await prevFlat.definition.onRouteLeave(context);
+          } catch (err) {
+            await onErrorEmitter.emitAsync({ error: err, context });
+          }
         }
       }
-    }
 
-    // 7. Global onNavigate listeners (awaited sequentially)
-    try {
-      await onNavigateEmitter.emitAsync(context);
-    } catch (err) {
-      await onErrorEmitter.emitAsync({ error: err, context });
+      // 6. Post-commit: onRouteUpdate if same route, different params
+      if (prevRoute !== null && prevRoute.path === to.path) {
+        if (match.route.definition.onRouteUpdate) {
+          try {
+            await match.route.definition.onRouteUpdate(context);
+          } catch (err) {
+            await onErrorEmitter.emitAsync({ error: err, context });
+          }
+        }
+      }
+
+      // 7. Global onNavigate listeners (awaited sequentially)
+      try {
+        await onNavigateEmitter.emitAsync(context);
+      } catch (err) {
+        await onErrorEmitter.emitAsync({ error: err, context });
+      }
+    };
+
+    // Wrap core with registered middlewares (Koa-style composition).
+    // onceCore ensures core runs exactly once even if next() is called multiple times.
+    let committed = false;
+    const onceCore = async (): Promise<void> => {
+      if (committed) return;
+      committed = true;
+      await core();
+    };
+
+    const composed = [...middlewareSet].reduceRight<() => Promise<void>>(
+      (acc, mw) => () => Promise.resolve(mw(context, acc)),
+      onceCore,
+    );
+    await composed();
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+    if (!committed) {
+      // Safety net: middleware forgot to call next() — warn and commit anyway.
+      console.warn(
+        "[urouter] A middleware did not call next(). The navigation was committed automatically.",
+      );
+      await onceCore();
     }
 
     return to;
@@ -396,6 +432,11 @@ export const createRouter = (options: RouterOptions): Router => {
       return () => beforeGuards.delete(guard);
     },
 
+    use(middleware: NavigationMiddleware): () => void {
+      middlewareSet.add(middleware);
+      return () => middlewareSet.delete(middleware);
+    },
+
     onNavigate(listener: (context: NavigationContext) => void | Promise<void>): () => void {
       return onNavigateEmitter.on(listener);
     },
@@ -415,11 +456,6 @@ export const createRouter = (options: RouterOptions): Router => {
       historyUnsub();
     },
   };
-
-  // Run plugins first so guards they register participate in the initial navigation.
-  for (const plugin of plugins) {
-    plugin(router);
-  }
 
   const ready = executeNavigation(stripBase(history.current, base), "replace", null, 0);
 

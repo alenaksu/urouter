@@ -144,6 +144,27 @@ export interface NavigationContext {
 export type MaybePromise<T> = T | Promise<T>;
 
 /**
+ * Navigation middleware — wraps the commit phase of every navigation.
+ * Fires after all guards pass. Call `await next()` to execute the commit
+ * (history update, `currentRoute`, post-commit hooks). If `next()` is not
+ * called, the commit runs automatically with a console warning.
+ *
+ * @example
+ * ```ts
+ * // View Transitions API — works with any reactive framework (Lit, React, Vue)
+ * router.use(async (ctx, next) => {
+ *   if (!document.startViewTransition) return next();
+ *   // .ready fires after new DOM is captured, before animation completes
+ *   await document.startViewTransition(() => next()).ready;
+ * });
+ * ```
+ */
+export type NavigationMiddleware = (
+  context: NavigationContext,
+  next: () => Promise<void>,
+) => MaybePromise<void>;
+
+/**
  * Return value from a navigation guard. Return `undefined` (or nothing) to
  * allow the navigation, `false` to block it, or a {@link HistoryLocation} to redirect.
  *
@@ -220,28 +241,6 @@ export class NavigationAbortedError extends Error {
 }
 
 /**
- * A plugin — receives the router instance at creation time and registers hooks
- * or extends behaviour. Plugins run before the initial navigation, so any guards
- * they register participate in the first route resolution.
- *
- * @example
- * ```ts
- * const loggerPlugin: RouterPlugin = (router) => {
- *   router.onNavigate(({ from, to }) => {
- *     console.log(`[router] ${from?.pathname ?? "(init)"} → ${to.pathname}`);
- *   });
- * };
- *
- * const router = createRouter({
- *   routes,
- *   history: createBrowserHistory(),
- *   plugins: [loggerPlugin],
- * });
- * ```
- */
-export type RouterPlugin = (router: Router) => void;
-
-/**
  * Low-level history primitive — string-only and base-unaware.
  * Implemented by {@link createBrowserHistory}, {@link createHashHistory},
  * {@link createMemoryHistory}, and {@link createNavigationHistory}.
@@ -295,7 +294,7 @@ export interface RouterHistory {
  *   history: createBrowserHistory(),
  *   base: "/app",         // strip "/app" prefix from all URLs
  *   maxRedirects: 5,      // abort after 5 consecutive redirects
- *   plugins: [
+ *   middlewares: [
  *     scrollRestoration(),
  *     webComponent({ outlet: "#router-outlet" }),
  *   ],
@@ -309,7 +308,11 @@ export interface RouterOptions {
   readonly base?: string;
   /** Max consecutive redirects before aborting with `"redirect-loop"`. Default: 10. */
   readonly maxRedirects?: number;
-  readonly plugins?: readonly RouterPlugin[];
+  /**
+   * Middleware registered before the initial navigation.
+   * Use {@link Router.use} to register middleware dynamically after creation.
+   */
+  readonly middlewares?: readonly NavigationMiddleware[];
 }
 
 /**
@@ -399,6 +402,22 @@ export interface Router {
    * ```
    */
   onBeforeNavigate(guard: NavigationGuard): () => void;
+
+  /**
+   * Register middleware that wraps the commit phase of every navigation.
+   * Fires after all guards pass. Returns an unsubscribe function.
+   *
+   * @example
+   * ```ts
+   * // View Transitions API — works with any reactive framework (Lit, React, Vue)
+   * router.use(async (ctx, next) => {
+   *   if (!document.startViewTransition) return next();
+   *   // .ready fires after new DOM is captured, before animation completes
+   *   await document.startViewTransition(() => next()).ready;
+   * });
+   * ```
+   */
+  use(middleware: NavigationMiddleware): () => void;
 
   /**
    * Register a listener that fires after each navigation commits. Returns an unsubscribe function.
