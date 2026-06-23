@@ -11,6 +11,7 @@ import {
   type Router,
   type RouterOptions,
 } from "./types.js";
+import { closestTarget } from "./utils/dom.js";
 
 // ---------------------------------------------------------------------------
 // Internal types
@@ -29,27 +30,32 @@ interface FlatRoute {
 
 const deepFreeze = <T>(obj: T): T => {
   if (typeof obj !== "object" || obj === null) return obj;
-  Object.freeze(obj);
-  for (const value of Object.values(obj as Record<string, unknown>)) {
+
+  for (const value of Object.values(obj)) {
     deepFreeze(value);
   }
-  return obj;
+
+  return Object.freeze(obj);
 };
 
 const flattenRoutes = (routes: readonly RouteDefinition[], parentPath = ""): FlatRoute[] => {
   const result: FlatRoute[] = [];
+
   for (const route of routes) {
     deepFreeze(route);
+
     const path = parentPath ? `${parentPath}/${route.path.replace(/^\//, "")}` : route.path;
     result.push({
       pattern: new URLPattern({ pathname: path }),
       path,
       definition: route,
     });
+
     if (route.children?.length) {
       result.push(...flattenRoutes(route.children, path));
     }
   }
+
   return result;
 };
 
@@ -81,7 +87,9 @@ const interpolateParams = (path: string, params?: Record<string, string>): strin
     );
     return /:[a-zA-Z_]/.test(resolved) ? "" : resolved;
   });
+
   if (!params) return withOptionals;
+
   return withOptionals.replace(
     /:([a-zA-Z_][a-zA-Z0-9_]*)/g,
     (_, key: string) => params[key] ?? `:${key}`,
@@ -112,6 +120,7 @@ const resolveToUrl = (
   if (typeof to === "string") {
     return stripBase(to, base);
   }
+
   if ("name" in to) {
     const route = flatRoutes.find((r) => r.definition.name === to.name);
     if (!route) return null;
@@ -119,6 +128,7 @@ const resolveToUrl = (
       interpolateParams(route.path, to.params) + buildQueryString(to.query) + buildHashStr(to.hash)
     );
   }
+
   return interpolateParams(to.path, to.params) + buildQueryString(to.query) + buildHashStr(to.hash);
 };
 
@@ -182,13 +192,7 @@ const buildResolvedRoute = (
  * ```
  */
 export const createRouter = (options: RouterOptions): Router => {
-  const {
-    routes: routeDefs,
-    history,
-    base = "",
-    maxRedirects = 10,
-    middlewares: middlewareList = [],
-  } = options;
+  const { routes: routeDefs, history, base = "", maxRedirects = 10, middlewares = [] } = options;
 
   const flatRoutes = flattenRoutes(routeDefs);
 
@@ -196,7 +200,7 @@ export const createRouter = (options: RouterOptions): Router => {
   let expectingHistoryChange = false;
 
   const beforeGuards = new Set<NavigationGuard>();
-  const middlewareSet = new Set<NavigationMiddleware>(middlewareList);
+  const middlewareSet = new Set<NavigationMiddleware>(middlewares);
   const onNavigateEmitter = createEmitter<NavigationContext>();
   const onErrorEmitter = createEmitter<{ error: unknown; context: NavigationContext }>();
 
@@ -238,7 +242,7 @@ export const createRouter = (options: RouterOptions): Router => {
     const searchIdx = withoutHash.indexOf("?");
     const pathname = searchIdx >= 0 ? withoutHash.slice(0, searchIdx) : withoutHash;
 
-    const match = matchUrl(pathname || "/", flatRoutes);
+    const match = matchUrl(pathname, flatRoutes);
     if (!match) {
       throw new NavigationAbortedError(from, url, "not-found");
     }
@@ -259,8 +263,8 @@ export const createRouter = (options: RouterOptions): Router => {
       if (redirect !== null) return redirect;
     }
 
-    // 2. Per-route onRouteEnter
-    if (match.route.definition.onRouteEnter) {
+    // 2. Per-route onRouteEnter — only fires when entering from a different route (or on initial nav)
+    if (match.route.definition.onRouteEnter && from?.path !== to.path) {
       let result: GuardResult;
       try {
         result = await match.route.definition.onRouteEnter(context);
@@ -376,15 +380,27 @@ export const createRouter = (options: RouterOptions): Router => {
   document.addEventListener(
     "click",
     (e: MouseEvent) => {
-      if (e.defaultPrevented || e.button !== 0) return;
+      // Ignore if the event was already handled
+      if (e.defaultPrevented) return;
+
+      // Only handle left-clicks
+      if (e.button !== 0) return;
+
+      // Ignore if any modifier keys are pressed
       if (e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return;
-      const anchor = (e.target as Element | null)?.closest("a[href]") as HTMLAnchorElement | null;
+
+      // Ignore if the click is not on an <a> element with an href
+      const anchor = closestTarget(e, "a[href]") as HTMLAnchorElement | null;
       if (!anchor) return;
+
+      // Ignore if the link has a target or download attribute, or if it's an external link
       if (anchor.target && anchor.target !== "_self") return;
       if (anchor.hasAttribute("download")) return;
       if (!anchor.href.startsWith(location.origin)) return;
+
       e.preventDefault();
       const url = anchor.href.slice(location.origin.length) || "/";
+
       void router.navigate(url);
     },
     { signal: controller.signal },

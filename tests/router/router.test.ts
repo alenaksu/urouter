@@ -400,6 +400,65 @@ describe("onRouteEnter", () => {
     await router.ready;
     await expect(router.navigate("/ok")).resolves.toMatchObject({ pathname: "/ok" });
   });
+
+  it("does not fire on same-route query change", async () => {
+    const enter = vi.fn();
+    const router = makeRouter({
+      routes: [{ path: "/about", name: "about", onRouteEnter: enter }],
+      history: createMemoryHistory({ initialUrl: "/about" }),
+    });
+    await router.ready;
+    enter.mockClear();
+    await router.navigate("/about?q=1");
+    expect(enter).not.toHaveBeenCalled();
+  });
+
+  it("does not fire on same-route hash change", async () => {
+    const enter = vi.fn();
+    const router = makeRouter({
+      routes: [{ path: "/about", name: "about", onRouteEnter: enter }],
+      history: createMemoryHistory({ initialUrl: "/about" }),
+    });
+    await router.ready;
+    enter.mockClear();
+    await router.navigate("/about#section");
+    expect(enter).not.toHaveBeenCalled();
+  });
+
+  it("does not fire on same-route param change", async () => {
+    const enter = vi.fn();
+    const router = makeRouter({
+      routes: [{ path: "/users/:id", name: "user", onRouteEnter: enter }],
+      history: createMemoryHistory({ initialUrl: "/users/1" }),
+    });
+    await router.ready;
+    enter.mockClear();
+    await router.navigate("/users/2");
+    expect(enter).not.toHaveBeenCalled();
+  });
+
+  it("fires when entering from a different route", async () => {
+    const enter = vi.fn();
+    const router = makeRouter({
+      routes: [
+        { path: "/", name: "home" },
+        { path: "/about", name: "about", onRouteEnter: enter },
+      ],
+    });
+    await router.ready;
+    await router.navigate("/about");
+    expect(enter).toHaveBeenCalledOnce();
+  });
+
+  it("fires on initial navigation", async () => {
+    const enter = vi.fn();
+    makeRouter({
+      routes: [{ path: "/", name: "home", onRouteEnter: enter }],
+    });
+    // initial nav to "/" — from is null
+    await Promise.resolve();
+    expect(enter).toHaveBeenCalledOnce();
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -479,6 +538,28 @@ describe("onRouteUpdate", () => {
     await router.ready;
     await router.navigate("/users/1");
     expect(update).not.toHaveBeenCalled();
+  });
+
+  it("fires on query change within same route", async () => {
+    const update = vi.fn();
+    const router = makeRouter({
+      routes: [{ path: "/about", name: "about", onRouteUpdate: update }],
+      history: createMemoryHistory({ initialUrl: "/about" }),
+    });
+    await router.ready;
+    await router.navigate("/about?q=1");
+    expect(update).toHaveBeenCalledOnce();
+  });
+
+  it("fires on hash change within same route", async () => {
+    const update = vi.fn();
+    const router = makeRouter({
+      routes: [{ path: "/about", name: "about", onRouteUpdate: update }],
+      history: createMemoryHistory({ initialUrl: "/about" }),
+    });
+    await router.ready;
+    await router.navigate("/about#section");
+    expect(update).toHaveBeenCalledOnce();
   });
 });
 
