@@ -15,8 +15,12 @@ describe("createEmitter", () => {
     it("calls multiple listeners in registration order", () => {
       const emitter = createEmitter<number>();
       const order: string[] = [];
-      emitter.on(() => order.push("a"));
-      emitter.on(() => order.push("b"));
+      emitter.on(() => {
+        order.push("a");
+      });
+      emitter.on(() => {
+        order.push("b");
+      });
       emitter.emit(1);
       expect(order).toEqual(["a", "b"]);
     });
@@ -91,7 +95,9 @@ describe("createEmitter", () => {
     it("mixes sync and async listeners, preserving order", async () => {
       const emitter = createEmitter<string>();
       const order: string[] = [];
-      emitter.on(() => order.push("sync"));
+      emitter.on(() => {
+        order.push("sync");
+      });
       emitter.on(async () => {
         await Promise.resolve();
         order.push("async");

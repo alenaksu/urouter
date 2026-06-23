@@ -39,7 +39,7 @@ function makeRouter(overrides?: Partial<Parameters<typeof createRouter>[0]>) {
 
 describe("createRouter", () => {
   it("currentRoute is null before the initial navigation commits", async () => {
-    let capturedDuringNav: ResolvedRoute | null = undefined!;
+    let capturedDuringNav: ResolvedRoute | null = null;
     const router = createRouter({
       routes,
       history: createMemoryHistory(),
@@ -119,6 +119,28 @@ describe("navigate(string)", () => {
     const route = await router.navigate("/about#section");
     expect(route.hash).toBe("#section");
   });
+
+  it("does nothing when navigating to the current URL", async () => {
+    const router = makeRouter();
+    await router.ready;
+    await router.navigate("/about");
+    const guard = vi.fn();
+    router.onBeforeNavigate(guard);
+    const result = await router.navigate("/about");
+    expect(guard).not.toHaveBeenCalled();
+    expect(result).toBe(router.currentRoute);
+  });
+
+  it("does nothing when navigating to the current URL including query and hash", async () => {
+    const router = makeRouter();
+    await router.ready;
+    await router.navigate("/about?tab=info#section");
+    const guard = vi.fn();
+    router.onBeforeNavigate(guard);
+    const result = await router.navigate("/about?tab=info#section");
+    expect(guard).not.toHaveBeenCalled();
+    expect(result).toBe(router.currentRoute);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -173,6 +195,17 @@ describe("replace", () => {
     await router.ready;
     const route = await router.replace("/about");
     expect(route.pathname).toBe("/about");
+  });
+
+  it("does nothing when replacing with the current URL", async () => {
+    const router = makeRouter();
+    await router.ready;
+    await router.navigate("/about");
+    const guard = vi.fn();
+    router.onBeforeNavigate(guard);
+    const result = await router.replace("/about");
+    expect(guard).not.toHaveBeenCalled();
+    expect(result).toBe(router.currentRoute);
   });
 
   it("does not grow the history stack", async () => {
@@ -311,19 +344,19 @@ describe("onBeforeNavigate", () => {
   it("receives from and to in context", async () => {
     const router = makeRouter();
     await router.ready;
-    let capturedFrom: ResolvedRoute | null = undefined!;
-    let capturedTo: ResolvedRoute | null = undefined!;
+    let capturedFrom: ResolvedRoute | null = null;
+    let capturedTo: ResolvedRoute | null = null;
     router.onBeforeNavigate(({ from, to }) => {
       capturedFrom = from;
       capturedTo = to;
     });
     await router.navigate("/about");
-    expect((capturedFrom as ResolvedRoute).pathname).toBe("/");
-    expect(capturedTo.pathname).toBe("/about");
+    expect(capturedFrom!.pathname).toBe("/");
+    expect(capturedTo!.pathname).toBe("/about");
   });
 
   it("from is null on the initial navigation", async () => {
-    let capturedFrom: ResolvedRoute | null = undefined!;
+    let capturedFrom: ResolvedRoute | null = null;
     const router = makeRouter({
       middlewares: [
         async ({ from }, next) => {

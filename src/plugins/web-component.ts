@@ -76,15 +76,17 @@ export const webComponent = (options: WebComponentOutletOptions): NavigationMidd
     const outlet = getOutlet();
     if (!outlet) return;
 
-    const component = (to.meta as Record<string, unknown>).component as string | undefined;
+    const component = (to.meta as { component?: string }).component;
     if (!component) return;
 
     if (currentElement && from !== null && from.path === to.path) {
       currentElement.onRouteUpdate?.(context);
     } else {
       currentElement?.onRouteLeave?.(context);
+
       currentElement = document.createElement(component);
       outlet.replaceChildren(currentElement);
+
       currentElement.onRouteEnter?.(context);
     }
   };

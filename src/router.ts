@@ -222,21 +222,31 @@ export const createRouter = (options: RouterOptions): Router => {
       if (redirectCount >= maxRedirects) {
         throw new NavigationAbortedError(context.from, result, "redirect-loop");
       }
-      const redirectUrl = resolveToUrl(result, base, flatRoutes);
-      if (redirectUrl === null) {
-        throw new NavigationAbortedError(context.from, result, "not-found");
-      }
-      return executeNavigation(redirectUrl, commit, context.from, redirectCount + 1);
+      return executeNavigation(result, commit, context.from, redirectCount + 1);
     }
     return null;
   }
 
   async function executeNavigation(
-    url: string,
+    destination: HistoryLocation | string,
     commit: "push" | "replace" | "external",
     from: ResolvedRoute | null,
     redirectCount: number,
   ): Promise<ResolvedRoute> {
+    const url =
+      typeof destination === "string" ? destination : resolveToUrl(destination, base, flatRoutes);
+    if (url === null) {
+      throw new NavigationAbortedError(from, destination, "not-found");
+    }
+
+    if (
+      commit !== "external" &&
+      currentRoute !== null &&
+      url === stripBase(history.current, base)
+    ) {
+      return currentRoute;
+    }
+
     const hashIdx = url.indexOf("#");
     const withoutHash = hashIdx >= 0 ? url.slice(0, hashIdx) : url;
     const searchIdx = withoutHash.indexOf("?");
@@ -415,21 +425,8 @@ export const createRouter = (options: RouterOptions): Router => {
       return currentRoute;
     },
 
-    navigate(to: HistoryLocation): Promise<ResolvedRoute> {
-      const url = resolveToUrl(to, base, flatRoutes);
-      if (url === null) {
-        return Promise.reject(new NavigationAbortedError(currentRoute, to, "not-found"));
-      }
-      return executeNavigation(url, "push", currentRoute, 0);
-    },
-
-    replace(to: HistoryLocation): Promise<ResolvedRoute> {
-      const url = resolveToUrl(to, base, flatRoutes);
-      if (url === null) {
-        return Promise.reject(new NavigationAbortedError(currentRoute, to, "not-found"));
-      }
-      return executeNavigation(url, "replace", currentRoute, 0);
-    },
+    navigate: (to) => executeNavigation(to, "push", currentRoute, 0),
+    replace: (to) => executeNavigation(to, "replace", currentRoute, 0),
 
     resolve(to: HistoryLocation): string {
       const url = resolveToUrl(to, base, flatRoutes);
