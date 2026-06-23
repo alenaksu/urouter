@@ -42,6 +42,7 @@ export const lit =
       } else {
         const outgoing: RouteElement | null = outlet.firstElementChild;
         outgoing?.onRouteLeave?.(context);
+
         const incoming: RouteElement = document.createElement(component);
         outlet.replaceChildren(incoming);
         incoming.onRouteEnter?.(context);
