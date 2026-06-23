@@ -119,7 +119,7 @@ const router = createRouter({
   history: createBrowserHistory(),
   base: "/app", // optional — stripped before matching, prepended on navigate
   // maxRedirects: 10,  // optional, default 10; set to 0 to disable redirect chaining
-  middlewares: [scrollRestoration(), webComponent({ outlet: "#outlet" })],
+  plugins: [scrollRestoration(), webComponent({ outlet: "#outlet" })],
 });
 
 // router.ready resolves when the initial navigation to the current URL completes
@@ -131,7 +131,7 @@ required. `router.ready` is a `Promise<ResolvedRoute>` that resolves when the in
 navigation completes. Awaiting it is optional but ensures the first route is rendered
 before continuing.
 
-**Middlewares** registered in `RouterOptions.middlewares` are installed before the initial
+**Plugins** registered in `RouterOptions.plugins` are installed before the initial
 navigation so they participate in the first route resolution. Use `router.use()` to
 register middleware dynamically after creation.
 
@@ -315,7 +315,7 @@ const stop = router.use(async ({ from, to }, next) => {
 stop(); // unsubscribe
 ```
 
-**Multiple middlewares** compose in registration order — first registered wraps outermost:
+**Multiple plugins** compose in registration order — first registered wraps outermost:
 
 ```ts
 router.use(async (ctx, next) => {
@@ -396,7 +396,7 @@ navigation) or dynamically:
 const router = createRouter({
   routes,
   history,
-  middlewares: [myMiddleware],
+  plugins: [myMiddleware],
 });
 
 // Dynamically — participates in all subsequent navigations
@@ -404,7 +404,7 @@ const unsub = router.use(myMiddleware);
 unsub(); // remove it when done
 ```
 
-### Built-in middlewares
+### Built-in plugins
 
 Available from the `"urouter/plugins"` sub-path:
 
@@ -421,7 +421,7 @@ Saves scroll position before commit, restores it after. On first visit (or when
 const router = createRouter({
   routes,
   history: createBrowserHistory(),
-  middlewares: [scrollRestoration({ behavior: "smooth" })],
+  plugins: [scrollRestoration({ behavior: "smooth" })],
 });
 ```
 
@@ -444,7 +444,7 @@ calls `onRouteUpdate` without replacing the element.
 const router = createRouter({
   routes,
   history: createBrowserHistory(),
-  middlewares: [webComponent({ outlet: "#outlet" })],
+  plugins: [webComponent({ outlet: "#outlet" })],
 });
 ```
 
@@ -521,7 +521,7 @@ const routes = [
 const router = createRouter({
   routes,
   history: createBrowserHistory(),
-  middlewares: [scrollRestoration(), webComponent({ outlet: "#outlet" })],
+  plugins: [scrollRestoration(), webComponent({ outlet: "#outlet" })],
 });
 
 await router.ready;
@@ -641,7 +641,7 @@ interface RouterOptions {
   readonly history: RouterHistory;
   readonly base?: string; // stripped before matching, prepended on navigate
   readonly maxRedirects?: number; // default: 10
-  readonly middlewares?: readonly NavigationMiddleware[];
+  readonly plugins?: readonly NavigationMiddleware[];
 }
 
 interface Router {
@@ -660,7 +660,7 @@ interface Router {
   destroy(): void;
 }
 
-// Built-in middlewares — import from "urouter/plugins"
+// Built-in plugins — import from "urouter/plugins"
 interface ScrollRestorationOptions {
   behavior?: ScrollBehavior; // default "auto"
   savedPosition?: boolean; // default true

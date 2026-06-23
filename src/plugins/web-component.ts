@@ -40,12 +40,12 @@ type RouteElement = Element & {
  *
  * // 3. Install the middleware:
  * import { createRouter, createBrowserHistory } from "urouter";
- * import { webComponent } from "urouter/plugins";
+ * import { webComponent } from "./middleware";
  *
  * const router = createRouter({
  *   routes,
  *   history: createBrowserHistory(),
- *   middlewares: [webComponent({ outlet: "#router-outlet" })],
+ *   plugins: [webComponent({ outlet: "#router-outlet" })],
  * });
  *
  * // 4. Optionally implement lifecycle hooks in a component:

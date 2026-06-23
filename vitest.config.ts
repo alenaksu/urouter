@@ -1,7 +1,22 @@
 import { defineConfig } from "vitest/config";
+import swc from "unplugin-swc";
 import { playwright } from "@vitest/browser-playwright";
 
 export default defineConfig({
+  plugins: [
+    swc.vite({
+      jsc: {
+        parser: {
+          syntax: "typescript",
+          decorators: true,
+        },
+        transform: {
+          legacyDecorator: true,
+          decoratorMetadata: true,
+        },
+      },
+    }),
+  ],
   test: {
     globals: true,
     passWithNoTests: true,

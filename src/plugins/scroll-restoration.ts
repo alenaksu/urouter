@@ -19,12 +19,12 @@ export interface ScrollRestorationOptions {
  * @example
  * ```ts
  * import { createRouter, createBrowserHistory } from "urouter";
- * import { scrollRestoration } from "urouter/plugins";
+ * import { scrollRestoration } from "./middleware";
  *
  * const router = createRouter({
  *   routes,
  *   history: createBrowserHistory(),
- *   middlewares: [
+ *   plugins: [
  *     scrollRestoration(),
  *     // scrollRestoration({ behavior: "smooth", savedPosition: false }),
  *   ],

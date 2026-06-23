@@ -96,9 +96,13 @@ const interpolateParams = (path: string, params?: Record<string, string>): strin
   );
 };
 
-const buildQueryString = (query?: Record<string, string>): string => {
-  if (!query || Object.keys(query).length === 0) return "";
-  return "?" + new URLSearchParams(query).toString();
+const buildQueryString = (query?: Record<string, string | undefined>): string => {
+  if (!query) return "";
+  const filtered = Object.fromEntries(
+    Object.entries(query).filter((entry): entry is [string, string] => entry[1] !== undefined),
+  );
+  if (Object.keys(filtered).length === 0) return "";
+  return "?" + new URLSearchParams(filtered).toString();
 };
 
 const buildHashStr = (hash?: string): string => {
@@ -192,7 +196,7 @@ const buildResolvedRoute = (
  * ```
  */
 export const createRouter = (options: RouterOptions): Router => {
-  const { routes: routeDefs, history, base = "", maxRedirects = 10, middlewares = [] } = options;
+  const { routes: routeDefs, history, base = "", maxRedirects = 10, plugins = [] } = options;
 
   const flatRoutes = flattenRoutes(routeDefs);
 
@@ -200,7 +204,7 @@ export const createRouter = (options: RouterOptions): Router => {
   let expectingHistoryChange = false;
 
   const beforeGuards = new Set<NavigationGuard>();
-  const middlewareSet = new Set<NavigationMiddleware>(middlewares);
+  const pluginSet = new Set<NavigationMiddleware>(plugins);
   const onNavigateEmitter = createEmitter<NavigationContext>();
   const onErrorEmitter = createEmitter<{ error: unknown; context: NavigationContext }>();
 
@@ -336,7 +340,7 @@ export const createRouter = (options: RouterOptions): Router => {
       }
     };
 
-    // Wrap core with registered middlewares (Koa-style composition).
+    // Wrap core with registered plugins (Koa-style composition).
     // onceCore ensures core runs exactly once even if next() is called multiple times.
     let committed = false;
     const onceCore = async (): Promise<void> => {
@@ -345,7 +349,7 @@ export const createRouter = (options: RouterOptions): Router => {
       await core();
     };
 
-    const composed = [...middlewareSet].reduceRight<() => Promise<void>>(
+    const composed = [...pluginSet].reduceRight<() => Promise<void>>(
       (acc, mw) => () => Promise.resolve(mw(context, acc)),
       onceCore,
     );
@@ -446,8 +450,8 @@ export const createRouter = (options: RouterOptions): Router => {
     },
 
     use(middleware: NavigationMiddleware): () => void {
-      middlewareSet.add(middleware);
-      return () => middlewareSet.delete(middleware);
+      pluginSet.add(middleware);
+      return () => pluginSet.delete(middleware);
     },
 
     onNavigate(listener: (context: NavigationContext) => void | Promise<void>): () => void {

@@ -5,7 +5,7 @@ A lightweight, framework-agnostic browser router for SPAs, built on modern brows
 - **[URLPattern API](https://developer.mozilla.org/en-US/docs/Web/API/URL_Pattern_API)** — expressive route matching with named parameters, wildcards, and regex groups
 - **[Navigation API](https://developer.mozilla.org/en-US/docs/Web/API/Navigation_API)** — unified interception of all navigation types (push, replace, traverse)
 - **Four history backends** — `browser` (pushState), `hash`, `memory` (SSR/tests), and `navigation` (Navigation API)
-- **Middleware** — wrap the commit phase with `router.use()`; ships with `scrollRestoration` and `webComponent` middlewares
+- **Middleware** — wrap the commit phase with `router.use()`; ships with `scrollRestoration`, `webComponent`, and `litOutlet` plugins
 - **Full TypeScript** — strongly typed routes, guards, and augmentable `RouteMeta`
 
 ## Browser support
@@ -247,7 +247,7 @@ const loggerMiddleware: NavigationMiddleware = async ({ from, to }, next) => {
 const router = createRouter({
   routes,
   history: createBrowserHistory(),
-  middlewares: [loggerMiddleware], // registered before initial navigation
+  plugins: [loggerMiddleware], // registered before initial navigation
 });
 
 // or dynamically:
@@ -277,7 +277,7 @@ import { scrollRestoration } from "urouter/plugins";
 const router = createRouter({
   routes,
   history: createBrowserHistory(),
-  middlewares: [
+  plugins: [
     scrollRestoration(),
     // scrollRestoration({ behavior: "smooth" }),
     // scrollRestoration({ savedPosition: false }), // always scroll to top
@@ -309,7 +309,7 @@ import { webComponent } from "urouter/plugins";
 const router = createRouter({
   routes,
   history: createBrowserHistory(),
-  middlewares: [webComponent({ outlet: "#router-outlet" })],
+  plugins: [webComponent({ outlet: "#router-outlet" })],
 });
 ```
 
@@ -338,6 +338,22 @@ class PageUser extends HTMLElement {
 customElements.define("page-user", PageUser);
 ```
 
+### `litOutlet` (Lit plugin)
+
+Like `webComponent` but uses Lit's `render`/`html` engine. On same-route navigation it calls `requestUpdate()` on the mounted element instead of replacing it.
+
+```ts
+import { createRouter, createBrowserHistory } from "urouter";
+import { provideRouter, litOutlet } from "urouter/plugins/lit";
+
+const router = createRouter({
+  routes,
+  history: createBrowserHistory(),
+  plugins: [litOutlet({ outlet: "#router-outlet" })],
+});
+provideRouter(router);
+```
+
 ## API reference
 
 Full API documentation with examples is available in the TypeScript source (JSDoc). Key exports from `"urouter"`:
@@ -359,12 +375,20 @@ Full API documentation with examples is available in the TypeScript source (JSDo
 | `NavigationMiddleware`    | type      | Middleware function type                              |
 | `RouteMeta`               | interface | Augmentable route metadata                            |
 
-Middlewares export from `"urouter/plugins"`:
+Plugins export from `"urouter/plugins"`:
 
 | Export              | Description                |
 | ------------------- | -------------------------- |
 | `scrollRestoration` | Scroll position management |
 | `webComponent`      | Web Components DOM outlet  |
+
+Lit plugin exports from `"urouter/plugins/lit"`:
+
+| Export             | Description                                        |
+| ------------------ | -------------------------------------------------- |
+| `litOutlet`        | Lit-powered DOM outlet (uses `render`/`html`)      |
+| `provideRouter`    | Register the router instance for use by decorators |
+| `LitOutletOptions` | Options type for `litOutlet`                       |
 
 ## Teardown
 

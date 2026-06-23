@@ -109,14 +109,14 @@ export type HistoryLocation =
   | {
       readonly path: string;
       readonly params?: Record<string, string>;
-      readonly query?: Record<string, string>;
+      readonly query?: Record<string, string | undefined>;
       readonly hash?: string;
       readonly state?: unknown;
     }
   | {
       readonly name: string;
       readonly params?: Record<string, string>;
-      readonly query?: Record<string, string>;
+      readonly query?: Record<string, string | undefined>;
       readonly hash?: string;
       readonly state?: unknown;
     };
@@ -284,7 +284,7 @@ export interface RouterHistory {
  * @example
  * ```ts
  * import { createRouter, createBrowserHistory } from "urouter";
- * import { scrollRestoration, webComponent } from "urouter/plugins";
+ * import { scrollRestoration, webComponent } from "./middleware";
  *
  * const router = createRouter({
  *   routes: [
@@ -309,10 +309,10 @@ export interface RouterOptions {
   /** Max consecutive redirects before aborting with `"redirect-loop"`. Default: 10. */
   readonly maxRedirects?: number;
   /**
-   * Middleware registered before the initial navigation.
-   * Use {@link Router.use} to register middleware dynamically after creation.
+   * Plugins registered before the initial navigation.
+   * Use {@link Router.use} to register plugins dynamically after creation.
    */
-  readonly middlewares?: readonly NavigationMiddleware[];
+  readonly plugins?: readonly NavigationMiddleware[];
 }
 
 /**

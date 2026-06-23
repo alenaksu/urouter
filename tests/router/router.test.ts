@@ -43,7 +43,7 @@ describe("createRouter", () => {
     const router = createRouter({
       routes,
       history: createMemoryHistory(),
-      middlewares: [
+      plugins: [
         async (context, next) => {
           await Promise.resolve();
           capturedDuringNav = router.currentRoute; // before next() — not yet committed
@@ -358,7 +358,7 @@ describe("onBeforeNavigate", () => {
   it("from is null on the initial navigation", async () => {
     let capturedFrom: ResolvedRoute | null = null;
     const router = makeRouter({
-      middlewares: [
+      plugins: [
         async ({ from }, next) => {
           capturedFrom = from;
           await next();
@@ -1005,7 +1005,7 @@ describe("router.use (middleware)", () => {
     expect(order).toEqual(["before-navigate", "middleware-done", "after-navigate"]);
   });
 
-  it("multiple middlewares compose in registration order", async () => {
+  it("multiple plugins compose in registration order", async () => {
     const order: string[] = [];
     const router = makeRouter();
     router.use(async (ctx, next) => {
@@ -1066,12 +1066,12 @@ describe("router.use (middleware)", () => {
     expect(called).not.toHaveBeenCalled();
   });
 
-  it("middlewares option seeds before the initial navigation", async () => {
+  it("plugins option seeds before the initial navigation", async () => {
     let firedOnInitial = false;
     const router = createRouter({
       routes,
       history: createMemoryHistory(),
-      middlewares: [
+      plugins: [
         async (ctx, next) => {
           firedOnInitial = true;
           await next();

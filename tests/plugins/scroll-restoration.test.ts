@@ -12,7 +12,7 @@ function makeRouter(opts?: Parameters<typeof scrollRestoration>[0]) {
   return createRouter({
     routes,
     history: createMemoryHistory(),
-    middlewares: [scrollRestoration(opts)],
+    plugins: [scrollRestoration(opts)],
   });
 }
 

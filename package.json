@@ -32,7 +32,25 @@
         "default": "./dist/plugins/index.cjs"
       }
     },
+    "./plugins/lit": {
+      "import": {
+        "types": "./dist/plugins/lit.d.ts",
+        "default": "./dist/plugins/lit.js"
+      },
+      "require": {
+        "types": "./dist/plugins/lit.d.cts",
+        "default": "./dist/plugins/lit.cjs"
+      }
+    },
     "./package.json": "./package.json"
+  },
+  "peerDependencies": {
+    "lit": ">=3.0.0"
+  },
+  "peerDependenciesMeta": {
+    "lit": {
+      "optional": true
+    }
   },
   "files": [
     "dist",
@@ -51,17 +69,20 @@
     "prepare": "husky"
   },
   "devDependencies": {
+    "@swc/core": "^1.15.43",
     "@vitest/browser": "^4.1.9",
     "@vitest/browser-playwright": "^4.1.9",
     "@vitest/coverage-v8": "4.1.9",
     "eslint": "10.5.0",
     "husky": "9.1.7",
     "lint-staged": "16.4.0",
+    "lit": "^3.3.3",
     "playwright": "^1.61.0",
     "prettier": "3.8.4",
     "tsup": "8.5.1",
     "typescript": "6.0.3",
     "typescript-eslint": "8.61.1",
+    "unplugin-swc": "^1.5.9",
     "vitest": "4.1.9"
   },
   "lint-staged": {
