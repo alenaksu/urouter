@@ -55,7 +55,8 @@
   "files": [
     "dist",
     "src",
-    "tsup.config.ts"
+    "tsup.config.ts",
+    "tsconfig.json"
   ],
   "scripts": {
     "build": "tsup",
