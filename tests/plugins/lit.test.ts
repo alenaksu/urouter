@@ -124,4 +124,60 @@ describe("litOutlet", () => {
     expect(outlet.firstElementChild?.tagName.toLowerCase()).toBe("lit-home");
     router.destroy();
   });
+
+  it("calls onRouteLeave on the outgoing element", async () => {
+    const router = createRouter({
+      routes,
+      history: createMemoryHistory(),
+      plugins: [litOutlet({ outlet })],
+    });
+    provideRouter(router);
+    await router.ready;
+    const outgoing = outlet.firstElementChild as LitElement & {
+      onRouteLeave: ReturnType<typeof vi.fn>;
+    };
+    outgoing.onRouteLeave = vi.fn();
+    await router.navigate("/about");
+    expect(outgoing.onRouteLeave).toHaveBeenCalledOnce();
+    router.destroy();
+  });
+
+  it("calls onRouteEnter on the incoming element", async () => {
+    const enterSpy = vi.fn();
+    customElements.define(
+      "lit-enter-check",
+      class extends LitElement {
+        onRouteEnter = enterSpy;
+      },
+    );
+
+    const router = createRouter({
+      routes: [
+        { path: "/", name: "home", meta: { component: "lit-home" } },
+        { path: "/check", name: "check", meta: { component: "lit-enter-check" } },
+      ],
+      history: createMemoryHistory(),
+      plugins: [litOutlet({ outlet })],
+    });
+    provideRouter(router);
+    await router.ready;
+    await router.navigate("/check");
+    expect(enterSpy).toHaveBeenCalledOnce();
+    router.destroy();
+  });
+
+  it("calls onRouteUpdate on same-route navigation with different params", async () => {
+    const router = createRouter({
+      routes,
+      history: createMemoryHistory({ initialUrl: "/users/1" }),
+      plugins: [litOutlet({ outlet })],
+    });
+    provideRouter(router);
+    await router.ready;
+    const el = outlet.firstElementChild as LitElement & { onRouteUpdate: ReturnType<typeof vi.fn> };
+    el.onRouteUpdate = vi.fn();
+    await router.navigate("/users/2");
+    expect(el.onRouteUpdate).toHaveBeenCalledOnce();
+    router.destroy();
+  });
 });

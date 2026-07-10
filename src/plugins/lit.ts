@@ -1,7 +1,14 @@
 import { render } from "lit";
+import { ref, createRef } from "lit/directives/ref.js";
 import { html, unsafeStatic } from "lit/static-html.js";
 import type { LitElement } from "lit";
-import type { NavigationMiddleware, Router } from "../types.js";
+import type { NavigationMiddleware, Router, NavigationContext } from "../types.js";
+
+type RouteElement = Element & {
+  onRouteEnter?: (context: NavigationContext) => void;
+  onRouteUpdate?: (context: NavigationContext) => void;
+  onRouteLeave?: (context: NavigationContext) => void;
+};
 
 // ---------------------------------------------------------------------------
 // Provider
@@ -76,9 +83,12 @@ export const litOutlet = (options: LitOutletOptions): NavigationMiddleware => {
       ? document.querySelector<HTMLElement>(options.outlet)
       : options.outlet;
 
-  return async ({ from, to }, next) => {
+  const componentRef = createRef<RouteElement>();
+
+  return async (context, next) => {
     await next();
 
+    const { from, to } = context;
     const el = getOutlet();
     if (!el) return;
 
@@ -86,12 +96,21 @@ export const litOutlet = (options: LitOutletOptions): NavigationMiddleware => {
     if (!tag) return;
 
     if (from !== null && from.path === to.path) {
-      const child = el.firstElementChild;
-      if (child && typeof (child as LitElement).requestUpdate === "function") {
-        (child as LitElement).requestUpdate();
+      const child = componentRef.value;
+      if (child) {
+        child.onRouteUpdate?.(context);
+        if (typeof (child as LitElement).requestUpdate === "function") {
+          (child as LitElement).requestUpdate();
+        }
       }
     } else {
-      render(html`<${unsafeStatic(tag)}></${unsafeStatic(tag)}>`, el);
+      const oldChild = componentRef.value;
+      oldChild?.onRouteLeave?.(context);
+
+      render(html`<${unsafeStatic(tag)} ${ref(componentRef)}></${unsafeStatic(tag)}>`, el);
+
+      const newChild = componentRef.value;
+      newChild?.onRouteEnter?.(context);
     }
   };
 };
