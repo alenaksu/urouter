@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { LitElement } from "lit";
 import { createRouter } from "../../src/router.js";
 import { createMemoryHistory } from "../../src/history/memory.js";
-import { provideRouter, litOutlet } from "../../src/plugins/lit.js";
+import { litOutlet } from "../../src/plugins/lit.js";
 import type { RouteDefinition } from "../../src/types.js";
 
 declare module "../../src/types.js" {
@@ -45,7 +45,7 @@ describe("litOutlet", () => {
       history: createMemoryHistory(),
       plugins: [litOutlet({ outlet })],
     });
-    provideRouter(router);
+
     await router.ready;
     expect(outlet.firstElementChild?.tagName.toLowerCase()).toBe("lit-home");
     router.destroy();
@@ -57,7 +57,7 @@ describe("litOutlet", () => {
       history: createMemoryHistory(),
       plugins: [litOutlet({ outlet })],
     });
-    provideRouter(router);
+
     await router.ready;
     await router.navigate("/about");
     expect(outlet.children.length).toBe(1);
@@ -71,7 +71,7 @@ describe("litOutlet", () => {
       history: createMemoryHistory({ initialUrl: "/users/1" }),
       plugins: [litOutlet({ outlet })],
     });
-    provideRouter(router);
+
     await router.ready;
 
     const el = outlet.firstElementChild as LitElement;
@@ -88,7 +88,7 @@ describe("litOutlet", () => {
       history: createMemoryHistory({ initialUrl: "/users/1" }),
       plugins: [litOutlet({ outlet })],
     });
-    provideRouter(router);
+
     await router.ready;
 
     const original = outlet.firstElementChild;
@@ -103,7 +103,7 @@ describe("litOutlet", () => {
       history: createMemoryHistory(),
       plugins: [litOutlet({ outlet })],
     });
-    provideRouter(router);
+
     await router.ready;
 
     const before = outlet.firstElementChild;
@@ -119,7 +119,7 @@ describe("litOutlet", () => {
       history: createMemoryHistory(),
       plugins: [litOutlet({ outlet: "#lit-router-outlet" })],
     });
-    provideRouter(router);
+
     await router.ready;
     expect(outlet.firstElementChild?.tagName.toLowerCase()).toBe("lit-home");
     router.destroy();
@@ -131,7 +131,7 @@ describe("litOutlet", () => {
       history: createMemoryHistory(),
       plugins: [litOutlet({ outlet })],
     });
-    provideRouter(router);
+
     await router.ready;
     const outgoing = outlet.firstElementChild as LitElement & {
       onRouteLeave: ReturnType<typeof vi.fn>;
@@ -159,7 +159,7 @@ describe("litOutlet", () => {
       history: createMemoryHistory(),
       plugins: [litOutlet({ outlet })],
     });
-    provideRouter(router);
+
     await router.ready;
     await router.navigate("/check");
     expect(enterSpy).toHaveBeenCalledOnce();
@@ -172,7 +172,7 @@ describe("litOutlet", () => {
       history: createMemoryHistory({ initialUrl: "/users/1" }),
       plugins: [litOutlet({ outlet })],
     });
-    provideRouter(router);
+
     await router.ready;
     const el = outlet.firstElementChild as LitElement & { onRouteUpdate: ReturnType<typeof vi.fn> };
     el.onRouteUpdate = vi.fn();

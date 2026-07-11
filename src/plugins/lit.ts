@@ -2,34 +2,13 @@ import { render } from "lit";
 import { ref, createRef } from "lit/directives/ref.js";
 import { html, unsafeStatic } from "lit/static-html.js";
 import type { LitElement } from "lit";
-import type { NavigationMiddleware, Router, NavigationContext } from "../types.js";
+import type { NavigationMiddleware, NavigationContext } from "../types.js";
 
 type RouteElement = Element & {
   onRouteEnter?: (context: NavigationContext) => void;
   onRouteUpdate?: (context: NavigationContext) => void;
   onRouteLeave?: (context: NavigationContext) => void;
 };
-
-// ---------------------------------------------------------------------------
-// Provider
-// ---------------------------------------------------------------------------
-
-let _router: Router | null = null;
-
-/**
- * Register the router instance used by Lit decorators and other plugin utilities.
- * Call once at app startup, before any decorated elements connect to the DOM.
- */
-export function provideRouter(router: Router): void {
-  _router = router;
-}
-
-export function getRouter(): Router {
-  if (!_router) {
-    throw new Error("[urouter/lit] Call provideRouter(router) before using route utilities.");
-  }
-  return _router;
-}
 
 // ---------------------------------------------------------------------------
 // litOutlet middleware
