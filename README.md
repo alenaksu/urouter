@@ -344,14 +344,13 @@ Like `webComponent` but uses Lit's `render`/`html` engine. On same-route navigat
 
 ```ts
 import { createRouter, createBrowserHistory } from "urouter";
-import { provideRouter, litOutlet } from "urouter/plugins/lit";
+import { litOutlet } from "urouter/plugins/lit";
 
 const router = createRouter({
   routes,
   history: createBrowserHistory(),
   plugins: [litOutlet({ outlet: "#router-outlet" })],
 });
-provideRouter(router);
 ```
 
 ## API reference
@@ -384,11 +383,10 @@ Plugins export from `"urouter/plugins"`:
 
 Lit plugin exports from `"urouter/plugins/lit"`:
 
-| Export             | Description                                        |
-| ------------------ | -------------------------------------------------- |
-| `litOutlet`        | Lit-powered DOM outlet (uses `render`/`html`)      |
-| `provideRouter`    | Register the router instance for use by decorators |
-| `LitOutletOptions` | Options type for `litOutlet`                       |
+| Export             | Description                                   |
+| ------------------ | --------------------------------------------- |
+| `litOutlet`        | Lit-powered DOM outlet (uses `render`/`html`) |
+| `LitOutletOptions` | Options type for `litOutlet`                  |
 
 ## Teardown
 

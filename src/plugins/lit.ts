@@ -46,14 +46,13 @@ export interface LitOutletOptions {
  *
  * // 3. Install:
  * import { createRouter, createBrowserHistory } from "urouter";
- * import { provideRouter, litOutlet } from "urouter/plugins/lit";
+ * import { litOutlet } from "urouter/plugins/lit";
  *
  * const router = createRouter({
  *   routes,
  *   history: createBrowserHistory(),
  *   plugins: [litOutlet({ outlet: "#router-outlet" })],
  * });
- * provideRouter(router);
  * ```
  */
 export const litOutlet = (options: LitOutletOptions): NavigationMiddleware => {
