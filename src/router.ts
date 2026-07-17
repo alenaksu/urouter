@@ -451,6 +451,15 @@ export const createRouter = (options: RouterOptions): Router => {
 
     use(middleware: NavigationMiddleware): () => void {
       pluginSet.add(middleware);
+
+      if (currentRoute !== null) {
+        const context: NavigationContext = { from: null, to: currentRoute };
+        const noopNext = () => Promise.resolve();
+        void Promise.resolve(middleware(context, noopNext)).catch((err: unknown) => {
+          void onErrorEmitter.emitAsync({ error: err, context });
+        });
+      }
+
       return () => pluginSet.delete(middleware);
     },
 

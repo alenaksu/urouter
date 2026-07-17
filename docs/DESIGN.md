@@ -298,6 +298,13 @@ redirects (default `10`), the navigation rejects with a `NavigationAbortedError`
 Registers middleware that **wraps the commit phase** of every navigation. Fires after all
 guards pass. Returns an unsubscribe function.
 
+If the router already has a `currentRoute` when `use()` is called (i.e. the initial
+navigation has completed), the middleware is immediately replayed with the current route
+as a synthetic `{ from: null, to: currentRoute }` context. The `next()` callback in
+this replay is a no-op — no real navigation commits. This allows stateful middleware
+(like `webComponent` or `litOutlet`) to initialize their DOM or internal state to match
+the current route without waiting for the next navigation.
+
 Call `await next()` inside the middleware to trigger the commit (history update,
 `currentRoute`, post-commit hooks). Code before `next()` runs pre-commit; code after
 runs post-commit.

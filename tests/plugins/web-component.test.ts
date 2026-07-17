@@ -143,4 +143,21 @@ describe("webComponent", () => {
     expect(outlet.firstElementChild?.tagName.toLowerCase()).toBe("page-home");
     router.destroy();
   });
+
+  it("initializes DOM when added after the initial navigation", async () => {
+    const router = createRouter({
+      routes,
+      history: createMemoryHistory(),
+    });
+    await router.ready;
+
+    expect(outlet.children.length).toBe(0);
+
+    router.use(webComponent({ outlet }));
+
+    await Promise.resolve();
+
+    expect(outlet.firstElementChild?.tagName.toLowerCase()).toBe("page-home");
+    router.destroy();
+  });
 });

@@ -317,6 +317,13 @@ var createRouter = (options) => {
     },
     use(middleware) {
       pluginSet.add(middleware);
+      if (currentRoute !== null) {
+        const context = { from: null, to: currentRoute };
+        const noopNext = () => Promise.resolve();
+        void Promise.resolve(middleware(context, noopNext)).catch((err) => {
+          void onErrorEmitter.emitAsync({ error: err, context });
+        });
+      }
       return () => pluginSet.delete(middleware);
     },
     onNavigate(listener) {

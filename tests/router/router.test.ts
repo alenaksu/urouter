@@ -999,6 +999,7 @@ describe("router.use (middleware)", () => {
       order.push("middleware-done");
     });
     await router.ready;
+    order.length = 0; // Clear replay side-effects
     order.push("before-navigate");
     await router.navigate("/about");
     order.push("after-navigate");
@@ -1061,9 +1062,100 @@ describe("router.use (middleware)", () => {
       await next();
     });
     await router.ready;
+    called.mockClear(); // Clear replay call
     unsub();
     await router.navigate("/about");
     expect(called).not.toHaveBeenCalled();
+  });
+
+  it("replays current route to middleware added after initial navigation", async () => {
+    const router = makeRouter();
+    await router.ready;
+
+    let replayedContext: NavigationContext | null = null;
+    router.use(async (ctx, next) => {
+      replayedContext ??= ctx;
+      await next();
+    });
+
+    await Promise.resolve();
+
+    expect(replayedContext).not.toBeNull();
+    expect(replayedContext!.from).toBeNull();
+    expect(replayedContext!.to.pathname).toBe("/");
+  });
+
+  it("replay next() is a no-op — does not push history or re-fire onNavigate", async () => {
+    const router = makeRouter();
+    await router.ready;
+
+    const navigateSpy = vi.fn();
+    router.onNavigate(navigateSpy);
+
+    let nextCalled = false;
+    router.use(async (_ctx, next) => {
+      await next();
+      nextCalled = true;
+    });
+
+    await Promise.resolve();
+
+    expect(nextCalled).toBe(true);
+    expect(navigateSpy).not.toHaveBeenCalled();
+  });
+
+  it("replay errors are forwarded to onError", async () => {
+    const router = makeRouter();
+    await router.ready;
+
+    const errorSpy = vi.fn();
+    router.onError(errorSpy);
+
+    router.use(() => {
+      throw new Error("init failed");
+    });
+
+    await Promise.resolve();
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(errorSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ message: "init failed" }),
+      expect.objectContaining({ from: null }),
+    );
+  });
+
+  it("does not replay if router has no current route yet", async () => {
+    const spy = vi.fn();
+    let resolveGuard: (() => void) | undefined;
+    const guardPromise = new Promise<void>((r) => {
+      resolveGuard = r;
+    });
+
+    const router = createRouter({
+      routes: [
+        {
+          path: "/",
+          onRouteEnter: async () => {
+            await guardPromise;
+          },
+        },
+      ],
+      history: createMemoryHistory(),
+      plugins: [],
+    });
+    allRouters.push(router);
+
+    router.use(async (ctx, next) => {
+      spy(ctx);
+      await next();
+    });
+
+    await Promise.resolve();
+    expect(spy).not.toHaveBeenCalled();
+
+    resolveGuard?.();
+    await router.ready;
+    expect(spy).toHaveBeenCalledOnce();
   });
 
   it("plugins option seeds before the initial navigation", async () => {
