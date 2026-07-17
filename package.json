@@ -68,8 +68,7 @@
     "lint:fix": "eslint src tests --fix",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "prepare": "husky",
-    "postinstall": "npm run build"
+    "prepare": "husky"
   },
   "devDependencies": {
     "@swc/core": "^1.15.43",
