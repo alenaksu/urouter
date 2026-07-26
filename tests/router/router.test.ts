@@ -1111,7 +1111,8 @@ describe("router.use (middleware)", () => {
     const errorSpy = vi.fn();
     router.onError(errorSpy);
 
-    router.use(() => {
+    router.use(async () => {
+      await Promise.resolve();
       throw new Error("init failed");
     });
 

@@ -18,17 +18,21 @@ var litOutlet = (options) => {
     if (from !== null && from.path === to.path) {
       const child = componentRef.value;
       if (child) {
-        child.onRouteUpdate?.(context);
+        await child.onRouteUpdate?.(context);
         if (typeof child.requestUpdate === "function") {
           child.requestUpdate();
         }
       }
     } else {
       const oldChild = componentRef.value;
-      oldChild?.onRouteLeave?.(context);
+      if (oldChild?.onRouteLeave) {
+        await oldChild.onRouteLeave(context);
+      }
       lit.render(staticHtml_js.html`<${staticHtml_js.unsafeStatic(tag)} ${ref_js.ref(componentRef)}></${staticHtml_js.unsafeStatic(tag)}>`, el);
       const newChild = componentRef.value;
-      newChild?.onRouteEnter?.(context);
+      if (newChild?.onRouteEnter) {
+        await newChild.onRouteEnter(context);
+      }
     }
   };
 };

@@ -5,9 +5,9 @@ import type { LitElement } from "lit";
 import type { NavigationMiddleware, NavigationContext } from "../types.js";
 
 type RouteElement = Element & {
-  onRouteEnter?: (context: NavigationContext) => void;
-  onRouteUpdate?: (context: NavigationContext) => void;
-  onRouteLeave?: (context: NavigationContext) => void;
+  onRouteEnter?: (context: NavigationContext) => Promise<void> | void;
+  onRouteUpdate?: (context: NavigationContext) => Promise<void> | void;
+  onRouteLeave?: (context: NavigationContext) => Promise<void> | void;
 };
 
 // ---------------------------------------------------------------------------
@@ -76,19 +76,23 @@ export const litOutlet = (options: LitOutletOptions): NavigationMiddleware => {
     if (from !== null && from.path === to.path) {
       const child = componentRef.value;
       if (child) {
-        child.onRouteUpdate?.(context);
+        await child.onRouteUpdate?.(context);
         if (typeof (child as LitElement).requestUpdate === "function") {
           (child as LitElement).requestUpdate();
         }
       }
     } else {
       const oldChild = componentRef.value;
-      oldChild?.onRouteLeave?.(context);
+      if (oldChild?.onRouteLeave) {
+        await oldChild.onRouteLeave(context);
+      }
 
       render(html`<${unsafeStatic(tag)} ${ref(componentRef)}></${unsafeStatic(tag)}>`, el);
 
       const newChild = componentRef.value;
-      newChild?.onRouteEnter?.(context);
+      if (newChild?.onRouteEnter) {
+        await newChild.onRouteEnter(context);
+      }
     }
   };
 };

@@ -193,6 +193,7 @@ describe("litOutlet", () => {
     router.use(litOutlet({ outlet }));
 
     await Promise.resolve();
+    await Promise.resolve();
 
     expect(outlet.firstElementChild?.tagName.toLowerCase()).toBe("lit-home");
     router.destroy();
